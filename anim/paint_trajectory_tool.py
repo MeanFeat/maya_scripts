@@ -3,10 +3,15 @@ import maya.mel as mel
 import maya.OpenMaya as OpenMaya
 import math
 
-brush = None
-camera = None
-motion_trail_points = None
-paint_trajectory_ctx = 'paint_trajectory_ctx'
+
+params = None
+
+class PaintTrajectoryParams():
+    motion_trail_points = None
+    def __init__(self, context = 'paint_trajectory_ctx' ):
+        self.context = context
+        self.brush = PaintParams()
+        self.camera = CameraParams()
 
 
 class CameraParams:
@@ -33,17 +38,18 @@ def world_to_screen(test_point, cam):
     proj_mtx = OpenMaya.MMatrix(cam_matrix.matrix)
 
     # multiply all together and do the normalisation
-    p = OpenMaya.MPoint(test_point[0], test_point[1], test_point[2]) * cam.get_inv_matrix() * proj_mtx
+    p = OpenMaya.MPoint(test_point.x, test_point.y, test_point.z) * cam.get_inv_matrix() * proj_mtx
     x = (p[0] / p[3] / 2 + .5) * cam.res_width
     y = (p[1] / p[3] / 2 + .5) * cam.res_height
-    return [x, y]
+    return OpenMaya.MPoint(x, y)
 
 
 class Point:
-    screen_point = (0.0, 0, 0.0)
+    screen_point = OpenMaya.MPoint()
+    world_point = OpenMaya.MPoint()
 
-    def __init__(self, w=(0.0, 0, 0.0), f=0):
-        self.world_point = w
+    def __init__(self, w, f=0):
+        self.world_point = OpenMaya.MPoint(w[0], w[1], w[2])
         self.feathering = f
 
     def update_screen_point(self, cam):
@@ -51,9 +57,10 @@ class Point:
 
     def within_dist(self, other, cam, t):
         ss_other = world_to_screen(other, cam)
+        delta = self.screen_point - ss_other
         x = self.screen_point[0] - ss_other[0]
         y = self.screen_point[1] - ss_other[1]
-        if abs(x) < t and abs(y) < t:
+        if abs(delta.x) < t and abs(delta.y) < t:
             dist_sqr = get_dist_sqr(x, y)
             if dist_sqr < t ** 2:
                 return True, dist_sqr
@@ -65,8 +72,8 @@ class PaintParams:
         self.modifier = ''
         self.radius = 50
         self.inner_radius = 10
-        self.current_anchor_point = (0, 0, 0)
-        self.last_drag_point = (0, 0, 0)
+        self.current_anchor_point = OpenMaya.MPoint()
+        self.last_drag_point = OpenMaya.MPoint()
         self.string = ''
 
     def adjust_radius(self, value):
@@ -107,87 +114,81 @@ def get_dist_sqr(x, y):
 
 
 def update_feather_mask(brush_location):
-    global brush, motion_trail_points
-    for p in motion_trail_points:
-        result, dist_sqr = p.within_dist(brush_location, camera, brush.radius)
+    global params
+    for p in params.motion_trail_points:
+        result, dist_sqr = p.within_dist(brush_location, params.camera, params.brush.radius)
         if result:
-            p.feathering = brush.get_feathering(dist_sqr)
+            p.feathering = params.brush.get_feathering(dist_sqr)
         else:
             p.feathering = 0
 
 
 def press():
-    global brush, camera, motion_trail_points
-    for p in motion_trail_points:
-        p.update_screen_point(camera)
+    global params
+    for p in params.motion_trail_points:
+        p.update_screen_point(params.camera)
 
-    brush.current_anchor_point = cmds.draggerContext(paint_trajectory_ctx, query=True, anchorPoint=True)
-    update_feather_mask(brush.current_anchor_point)
-    brush.last_drag_point = brush.current_anchor_point
-    brush.modifier = cmds.draggerContext(paint_trajectory_ctx, query=True, modifier=True)
+    params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
+    update_feather_mask(params.brush.current_anchor_point.world_point)
+    params.brush.last_drag_point = params.brush.current_anchor_point
+    params.brush.modifier = cmds.draggerContext(params.context, query=True, modifier=True)
 
 
 def update_actual_trail(trail_points):
     coordinates = ''
     for p in trail_points:
-        for coord in p.world_point:
-            coordinates += str(coord) + ' '
+        coordinates += str(p.world_point.x) + ' ' + str(p.world_point.y) + ' ' + str(p.world_point.z) + ' ' + str(p.world_point.w) + ' '
     cmd = 'setAttr motionTrail1.points -type pointArray ' + str(len(trail_points)) + ' ' + coordinates + ' ;'
     mel.eval(cmd)
 
 
 def drag():
-    global brush, camera, motion_trail_points
-    drag_position = cmds.draggerContext(paint_trajectory_ctx, query=True, dragPoint=True)
-    button = cmds.draggerContext(paint_trajectory_ctx, query=True, button=True)
+    global params
+    drag_position = Point(cmds.draggerContext(params.context, query=True, dragPoint=True))
+    button = cmds.draggerContext(params.context, query=True, button=True)
 
     if button == 1:
         adjust = 1
 
-        if 'ctrl' in brush.modifier:
+        if 'ctrl' in params.brush.modifier:
             print('ctrl')
-        elif 'shift' in brush.modifier:
+        elif 'shift' in params.brush.modifier:
             adjust *= -1
 
-        for p in motion_trail_points:
+        for p in params.motion_trail_points:
             feathering = p.feathering * adjust
-            x = p.world_point[0] + ((drag_position[0] - brush.last_drag_point[0]) * feathering)
-            y = p.world_point[1] + ((drag_position[1] - brush.last_drag_point[1]) * feathering)
-            z = p.world_point[2] + ((drag_position[2] - brush.last_drag_point[2]) * feathering)
-            p.world_point = (x, y, z, 1.0)
-            p.update_screen_point(camera)
-        update_actual_trail(motion_trail_points)
+            p.world_point = p.world_point + ((drag_position.world_point - params.brush.last_drag_point.world_point) * feathering)
+            p.update_screen_point(params.camera)
+        update_actual_trail(params.motion_trail_points)
         cmds.refresh()
 
     if button == 2:
         adjust = 2
-        if drag_position[0] < brush.last_drag_point[0]:
+        if drag_position.world_point.x < params.brush.last_drag_point.world_point.x:
             adjust *= -1
 
-        if 'shift' in brush.modifier:
-            brush.adjust_inner_radius(adjust)
+        if 'shift' in params.brush.modifier:
+            params.brush.adjust_inner_radius(adjust)
         else:
-            brush.adjust_radius(adjust)
-        cmds.headsUpMessage("radius: " + str(brush.inner_radius) + " / " + str(brush.radius), time=1.0)
-        # cmds.refresh()
+            params.brush.adjust_radius(adjust)
+        cmds.headsUpMessage("radius: " + str(params.brush.inner_radius) + " / " + str(params.brush.radius), time=1.0)
 
-    brush.last_drag_point = drag_position
+    params.brush.last_drag_point = drag_position
 
 
 def paint_trajectory_init():
-    global brush, camera, motion_trail_points
+    global params
 
-    brush = PaintParams()
-    camera = CameraParams()
+    params = PaintTrajectoryParams()
 
-    motion_trail_points = []
+    params.motion_trail_points = []
     for trail_point in cmds.getAttr('motionTrail1.points'):
         point = Point(trail_point)
-        point.update_screen_point(camera)
-        motion_trail_points.append(point)
+        point.update_screen_point(params.camera)
+        params.motion_trail_points.append(point)
 
-    cmds.draggerContext(paint_trajectory_ctx, edit=cmds.draggerContext(paint_trajectory_ctx, exists=True),
+    cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
                         pressCommand='press()',
                         dragCommand='drag()',
                         space='world', cursor='crossHair', undoMode="step")
-    cmds.setToolTo(paint_trajectory_ctx)
+    cmds.setToolTo(params.context)
