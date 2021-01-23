@@ -1,47 +1,31 @@
 import maya.cmds as cmds
 import maya.mel as mel
-import maya.OpenMaya as OpenMaya
+from maya.api import OpenMaya
+from maya.api import OpenMayaUI
 import math
 
 
 params = None
 
-class PaintTrajectoryParams():
+
+class PaintTrajectoryParams:
     motion_trail_points = None
-    def __init__(self, context = 'paint_trajectory_ctx' ):
+
+    def __init__(self, context='paint_trajectory_ctx'):
         self.context = context
         self.brush = PaintParams()
-        self.camera = CameraParams()
 
 
-class CameraParams:
-    def __init__(self, name='persp'):
-        selList = OpenMaya.MSelectionList()
-        selList.add(name)
-        self.name = name
-        self.dag_path = OpenMaya.MDagPath()
-        selList.getDagPath(0, self.dag_path)
-        self.dag_path.extendToShape()
-
-        self.res_width = cmds.getAttr('defaultResolution.width')
-        self.res_height = cmds.getAttr('defaultResolution.height')
-
-    def get_inv_matrix(self):
-        return self.dag_path.inclusiveMatrix().inverse()
-
-
-def world_to_screen(test_point, cam):
-    # use a camera function set to get projection matrix, convert the MFloatMatrix
-    # into a MMatrix for multiplication compatibility
-    fn_cam = OpenMaya.MFnCamera(cam.dag_path)
-    cam_matrix = fn_cam.projectionMatrix()
-    proj_mtx = OpenMaya.MMatrix(cam_matrix.matrix)
-
-    # multiply all together and do the normalisation
-    p = OpenMaya.MPoint(test_point.x, test_point.y, test_point.z) * cam.get_inv_matrix() * proj_mtx
-    x = (p[0] / p[3] / 2 + .5) * cam.res_width
-    y = (p[1] / p[3] / 2 + .5) * cam.res_height
+def world_to_view(p):
+    x, y, b = OpenMayaUI.M3dView.active3dView().worldToView(p)
     return OpenMaya.MPoint(x, y)
+
+
+def view_to_world(p):
+    world_point = OpenMaya.MPoint()
+    world_vec = OpenMaya.MVector()
+    OpenMayaUI.M3dView.active3dView().viewToWorld(int(p.x), int(p.y), world_point, world_vec)
+    return world_point
 
 
 class Point:
@@ -52,18 +36,16 @@ class Point:
         self.world_point = OpenMaya.MPoint(w[0], w[1], w[2])
         self.feathering = f
 
-    def update_screen_point(self, cam):
-        self.screen_point = world_to_screen(self.world_point, cam)
+    def update_screen_point(self):
+        self.screen_point = world_to_view(self.world_point)
 
-    def within_dist(self, other, cam, t):
-        ss_other = world_to_screen(other, cam)
-        delta = self.screen_point - ss_other
-        x = self.screen_point[0] - ss_other[0]
-        y = self.screen_point[1] - ss_other[1]
+    def within_dist(self, other, t):
+        ss_other = world_to_view(other)
+        delta = OpenMaya.MVector(self.screen_point - ss_other)
         if abs(delta.x) < t and abs(delta.y) < t:
-            dist_sqr = get_dist_sqr(x, y)
-            if dist_sqr < t ** 2:
-                return True, dist_sqr
+            dist = delta.length()
+            if dist < t:
+                return True, dist
         return False, 0
 
 
@@ -94,52 +76,56 @@ class PaintParams:
         elif self.inner_radius >= 300:
             self.inner_radius = 300
 
-    def get_feathering(self, dist_sqr):
+    def get_feathering(self, dist):
         # smooth non-linearity based on tanh
-        if dist_sqr < self.inner_radius ** 2:
+        if dist < self.inner_radius:
             return 1
-        x = math.sqrt(dist_sqr) - self.inner_radius
+        x = dist - self.inner_radius
         y = self.radius - self.inner_radius
         z = x / y
         a = 3 * z ** 2
-        b = 1 - a / z
+        b = 1 - a / (z + 0.00001)
         c = math.tanh(b) / 1.75
         result = c + 0.57
         return result
 
 
-def get_dist_sqr(x, y):
-    result = x * x + y * y
-    return result
-
-
 def update_feather_mask(brush_location):
     global params
     for p in params.motion_trail_points:
-        result, dist_sqr = p.within_dist(brush_location, params.camera, params.brush.radius)
+        result, dist = p.within_dist(brush_location, params.brush.radius)
         if result:
-            p.feathering = params.brush.get_feathering(dist_sqr)
+            p.feathering = params.brush.get_feathering(dist)
         else:
             p.feathering = 0
 
 
-def press():
-    global params
-    for p in params.motion_trail_points:
-        p.update_screen_point(params.camera)
-
-    params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
-    update_feather_mask(params.brush.current_anchor_point.world_point)
-    params.brush.last_drag_point = params.brush.current_anchor_point
-    params.brush.modifier = cmds.draggerContext(params.context, query=True, modifier=True)
-
-
-def update_actual_trail(trail_points):
+def set_actual_trail(trail_points):
     coordinates = ''
     for p in trail_points:
         coordinates += str(p.world_point.x) + ' ' + str(p.world_point.y) + ' ' + str(p.world_point.z) + ' ' + str(p.world_point.w) + ' '
     cmd = 'setAttr motionTrail1.points -type pointArray ' + str(len(trail_points)) + ' ' + coordinates + ' ;'
     mel.eval(cmd)
+
+
+def press():
+    global params
+    update_actual_trail()
+
+    params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
+    
+    update_feather_mask(params.brush.current_anchor_point.world_point)
+    params.brush.last_drag_point = params.brush.current_anchor_point
+    params.brush.modifier = cmds.draggerContext(params.context, query=True, modifier=True)
+
+
+def update_actual_trail():
+    global params
+    params.motion_trail_points = []
+    for trail_point in cmds.getAttr('motionTrail1.points'):
+        p = Point(trail_point)
+        params.motion_trail_points.append(p)
+        p.update_screen_point()
 
 
 def drag():
@@ -158,9 +144,9 @@ def drag():
         for p in params.motion_trail_points:
             feathering = p.feathering * adjust
             p.world_point = p.world_point + ((drag_position.world_point - params.brush.last_drag_point.world_point) * feathering)
-            p.update_screen_point(params.camera)
-        update_actual_trail(params.motion_trail_points)
-        cmds.refresh()
+            p.update_screen_point()
+        set_actual_trail(params.motion_trail_points)
+        OpenMayaUI.M3dView.active3dView().refresh()
 
     if button == 2:
         adjust = 2
@@ -181,14 +167,7 @@ def paint_trajectory_init():
 
     params = PaintTrajectoryParams()
 
-    params.motion_trail_points = []
-    for trail_point in cmds.getAttr('motionTrail1.points'):
-        point = Point(trail_point)
-        point.update_screen_point(params.camera)
-        params.motion_trail_points.append(point)
-
     cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
-                        pressCommand='press()',
-                        dragCommand='drag()',
+                        pressCommand='press()', dragCommand='drag()',
                         space='world', cursor='crossHair', undoMode="step")
     cmds.setToolTo(params.context)
