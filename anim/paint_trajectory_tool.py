@@ -48,6 +48,10 @@ class Point:
                 return True, dist
         return False, 0
 
+    def __str__(self):
+        result = 'world ' + str(self.world_point) + ' screen ' + str(self.screen_point)
+        return result
+
 
 class PaintParams:
     def __init__(self):
