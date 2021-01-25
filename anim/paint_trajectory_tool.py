@@ -14,8 +14,12 @@ maya_useNewAPI = True
 
 class PaintTrajectoryParams:
     motion_trail_points = None
+
     normalize_to_origin = True
-    loop_animation = True
+    normalization_dist = 12
+
+    loop_animation = False
+
     anim_layer = anim_layer('paint_trajectory_layer')
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
@@ -29,14 +33,21 @@ class PaintTrajectoryParams:
         start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(OpenMaya.MTime.uiUnit()))
         end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(OpenMaya.MTime.uiUnit()))
         print('start frame ' + str(start_frame) + ' end frame ' + str(end_frame))
-        self.animated_translations = []
-        animated_transform_func = OpenMaya.MFnTransform(animated_dag_path)
 
+        # TODO remove spaceLocator hack and get correct absolute world space translation
+        temp_locator = cmds.spaceLocator()
+        cmds.parentConstraint(animated_dag_path, temp_locator, maintainOffset=False)
+        self.animated_translations = []
+
+        original_ctx = OpenMaya.MDGContext(OpenMaya.MTime(0, OpenMaya.MTime.uiUnit()))
+        original_ctx = original_ctx.makeCurrent()
         for i in range(start_frame, end_frame):
-            time = OpenMaya.MTime(i, unit=OpenMaya.MTime.uiUnit())
-            OpenMayaAnim.MAnimControl.setCurrentTime(time)
-            t = animated_transform_func.translation(OpenMaya.MSpace.kWorld)
-            self.animated_translations.append(t)
+            time_ctx = OpenMaya.MDGContext(OpenMaya.MTime(i, OpenMaya.MTime.uiUnit()))
+            time_ctx.makeCurrent()
+            t = cmds.xform(temp_locator, query=True, translation=True, worldSpace=True)
+            self.animated_translations.append(OpenMaya.MVector(t[0], t[1], t[2]))
+        original_ctx.makeCurrent()
+        cmds.delete(temp_locator)
 
 
 class Point:
@@ -142,8 +153,14 @@ def set_actual_trail(trail_points):
 
 def paint_trajectory_press():
     global params
-    get_motion_trail_from_scene()
 
+    # update from the scene in case we undo
+    get_motion_trail_from_scene()
+    """
+    if len(params.motion_trail_points) is not len(params.animated_translations):
+        cancel_tool("motion trail points ("+str(len(params.motion_trail_points))+")  not the same length as animated translations ("
+                    + str(len(params.animated_translations)) + ")")
+    """
     params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
 
     update_feather_mask(params.brush.current_anchor_point.world_point)
@@ -159,25 +176,30 @@ def get_motion_trail_from_scene():
         params.motion_trail_points.append(p)
 
 
+def smooth_points():
+    cancel_tool("smooth not implemented")
+    pass
+
+
 def paint_trajectory_drag():
     global params
     drag_position = Point(cmds.draggerContext(params.context, query=True, dragPoint=True))
     button = cmds.draggerContext(params.context, query=True, button=True)
 
     if button == 1:
-        if 'ctrl' in params.brush.modifier:
-            print('ctrl')
-
-        drag_points(params.brush, drag_position.world_point, params.motion_trail_points)
+        if 'shift' in params.brush.modifier:
+            smooth_points()
+        else:
+            drag_points(params.brush, drag_position.world_point, params.motion_trail_points)
 
         if params.normalize_to_origin:
-            for i in range(len(params.motion_trail_points)-1):
+            for i in range(len(params.motion_trail_points) - 1):
                 p = params.motion_trail_points[i]
                 origin = params.animated_translations[i]
                 vec = OpenMaya.MVector(p.world_point) - origin
-                p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * 10)))
+                p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * params.normalization_dist)))
         if params.loop_animation:
-            params.motion_trail_points[-1] = params.motion_trail_points[0]
+            params.motion_trail_points[0] = params.motion_trail_points[-1]
         set_actual_trail(params.motion_trail_points)
         OpenMayaUI.M3dView.active3dView().refresh()
 
@@ -224,4 +246,3 @@ def cancel_tool(string):
     print(string)
     cmds.headsUpMessage(string, time=2.0)
     sys.exit()
-
