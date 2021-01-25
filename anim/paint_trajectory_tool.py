@@ -1,31 +1,42 @@
+import math
+import sys
+
 import maya.cmds as cmds
 import maya.mel as mel
 from maya.api import OpenMaya
 from maya.api import OpenMayaUI
-import math
-
+from maya.api import OpenMayaAnim
+from anim.anim_layer import anim_layer
 
 params = None
+maya_useNewAPI = True
 
 
 class PaintTrajectoryParams:
     motion_trail_points = None
+    normalize_to_origin = True
+    loop_animation = True
+    anim_layer = anim_layer('paint_trajectory_layer')
 
-    def __init__(self, context='paint_trajectory_ctx'):
+    def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
         self.brush = PaintParams()
+        animated_dag_path, animated_object = selection_list.getComponent(0)
 
+        if not OpenMayaAnim.MAnimUtil.isAnimated(animated_dag_path):
+            cancel_tool("please select an animated object")
 
-def world_to_view(p):
-    x, y, b = OpenMayaUI.M3dView.active3dView().worldToView(p)
-    return OpenMaya.MPoint(x, y)
+        start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(OpenMaya.MTime.uiUnit()))
+        end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(OpenMaya.MTime.uiUnit()))
+        print('start frame ' + str(start_frame) + ' end frame ' + str(end_frame))
+        self.animated_translations = []
+        animated_transform_func = OpenMaya.MFnTransform(animated_dag_path)
 
-
-def view_to_world(p):
-    world_point = OpenMaya.MPoint()
-    world_vec = OpenMaya.MVector()
-    OpenMayaUI.M3dView.active3dView().viewToWorld(int(p.x), int(p.y), world_point, world_vec)
-    return world_point
+        for i in range(start_frame, end_frame):
+            time = OpenMaya.MTime(i, unit=OpenMaya.MTime.uiUnit())
+            OpenMayaAnim.MAnimControl.setCurrentTime(time)
+            t = animated_transform_func.translation(OpenMaya.MSpace.kWorld)
+            self.animated_translations.append(t)
 
 
 class Point:
@@ -33,11 +44,16 @@ class Point:
     world_point = OpenMaya.MPoint()
 
     def __init__(self, w, f=0):
-        self.world_point = OpenMaya.MPoint(w[0], w[1], w[2])
+        self.set_world_point(OpenMaya.MPoint(w[0], w[1], w[2]))
         self.feathering = f
 
-    def update_screen_point(self):
-        self.screen_point = world_to_view(self.world_point)
+    def set_world_point(self, p):
+        self.world_point = p
+        self.screen_point = world_to_view(p)
+
+    def set_screen_point(self, p):
+        self.screen_point = p
+        self.world_point = view_to_world(p)
 
     def within_dist(self, other, t):
         ss_other = world_to_view(other)
@@ -51,6 +67,18 @@ class Point:
     def __str__(self):
         result = 'world ' + str(self.world_point) + ' screen ' + str(self.screen_point)
         return result
+
+
+def world_to_view(p):
+    x, y, b = OpenMayaUI.M3dView.active3dView().worldToView(p)
+    return OpenMaya.MPoint(x, y)
+
+
+def view_to_world(p):
+    wp = OpenMaya.MPoint()
+    wv = OpenMaya.MVector()
+    OpenMayaUI.M3dView.active3dView().viewToWorld(int(p.x), int(p.y), wp, wv)
+    return wp
 
 
 class PaintParams:
@@ -81,7 +109,7 @@ class PaintParams:
             self.inner_radius = 300
 
     def get_feathering(self, dist):
-        # smooth non-linearity based on tanh
+        # smooth non-linearity based on TanH
         if dist < self.inner_radius:
             return 1
         x = dist - self.inner_radius
@@ -112,43 +140,44 @@ def set_actual_trail(trail_points):
     mel.eval(cmd)
 
 
-def press():
+def paint_trajectory_press():
     global params
-    update_actual_trail()
+    get_motion_trail_from_scene()
 
     params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
-    
+
     update_feather_mask(params.brush.current_anchor_point.world_point)
     params.brush.last_drag_point = params.brush.current_anchor_point
     params.brush.modifier = cmds.draggerContext(params.context, query=True, modifier=True)
 
 
-def update_actual_trail():
+def get_motion_trail_from_scene():
     global params
     params.motion_trail_points = []
     for trail_point in cmds.getAttr('motionTrail1.points'):
         p = Point(trail_point)
         params.motion_trail_points.append(p)
-        p.update_screen_point()
 
 
-def drag():
+def paint_trajectory_drag():
     global params
     drag_position = Point(cmds.draggerContext(params.context, query=True, dragPoint=True))
     button = cmds.draggerContext(params.context, query=True, button=True)
 
     if button == 1:
-        adjust = 1
-
         if 'ctrl' in params.brush.modifier:
             print('ctrl')
-        elif 'shift' in params.brush.modifier:
-            adjust *= -1
 
-        for p in params.motion_trail_points:
-            feathering = p.feathering * adjust
-            p.world_point = p.world_point + ((drag_position.world_point - params.brush.last_drag_point.world_point) * feathering)
-            p.update_screen_point()
+        drag_points(params.brush, drag_position.world_point, params.motion_trail_points)
+
+        if params.normalize_to_origin:
+            for i in range(len(params.motion_trail_points)-1):
+                p = params.motion_trail_points[i]
+                origin = params.animated_translations[i]
+                vec = OpenMaya.MVector(p.world_point) - origin
+                p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * 10)))
+        if params.loop_animation:
+            params.motion_trail_points[-1] = params.motion_trail_points[0]
         set_actual_trail(params.motion_trail_points)
         OpenMayaUI.M3dView.active3dView().refresh()
 
@@ -166,12 +195,33 @@ def drag():
     params.brush.last_drag_point = drag_position
 
 
+def drag_points(brush, drag_point, points):
+    for p in points:
+        if p.feathering > 0:
+            p.set_world_point(p.world_point + ((drag_point - brush.last_drag_point.world_point) * p.feathering))
+
+
+def paint_trajectory_release():
+    return
+
+
 def paint_trajectory_init():
     global params
-
-    params = PaintTrajectoryParams()
+    selection_list = OpenMaya.MGlobal.getActiveSelectionList()
+    if not selection_list.isEmpty():
+        params = PaintTrajectoryParams(selection_list)
+    else:
+        cancel_tool("please select an obect")
 
     cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
-                        pressCommand='press()', dragCommand='drag()',
+                        pressCommand='paint_trajectory_press()', dragCommand='paint_trajectory_drag()',
+                        releaseCommand='paint_trajectory_release()',
                         space='world', cursor='crossHair', undoMode="step")
     cmds.setToolTo(params.context)
+
+
+def cancel_tool(string):
+    print(string)
+    cmds.headsUpMessage(string, time=2.0)
+    sys.exit()
+
