@@ -36,12 +36,23 @@ class PaintTrajectoryParams:
 
         self.animated_translations = []
         animated_func = OpenMaya.MFnTransform(animated_dag_path)
-        original_ctx = OpenMaya.MDGContext(OpenMaya.MTime(0, OpenMaya.MTime.uiUnit())).makeCurrent()
+        original_ctx = OpenMaya.MDGContext.current()
         for i in range(start_frame, end_frame):
             time_ctx = OpenMaya.MDGContext(OpenMaya.MTime(i, OpenMaya.MTime.uiUnit()))
             time_ctx.makeCurrent()
-            self.animated_translations.append(animated_func.rotatePivot(OpenMaya.MSpace.kWorld))
+            t = animated_func.rotatePivot(OpenMaya.MSpace.kWorld)
+            self.animated_translations.append(OpenMaya.MVector(t))
         original_ctx.makeCurrent()
+
+    def adjust_normalization_dist(self, value):
+        self.normalization_dist += value
+        if self.normalization_dist <= 5:
+            self.normalization_dist = 5
+        elif self.normalization_dist >= 1000:
+            self.normalization_dist = 1000
+        update_normalization_dist()
+        set_actual_trail(self.motion_trail_points)
+        OpenMayaUI.M3dView.active3dView().refresh()
 
 
 class Point:
@@ -61,6 +72,7 @@ class Point:
         self.world_point = view_to_world(p)
 
     def within_dist(self, other, t):
+        """ [bool, distance] when false returns a distance of 0 """
         ss_other = world_to_view(other)
         delta = OpenMaya.MVector(self.screen_point - ss_other)
         if abs(delta.x) < t and abs(delta.y) < t:
@@ -187,11 +199,7 @@ def paint_trajectory_drag():
             drag_points(params.brush, drag_position.world_point, params.motion_trail_points)
 
         if params.normalize_to_origin:
-            for i in range(len(params.motion_trail_points) - 1):
-                p = params.motion_trail_points[i]
-                origin = params.animated_translations[i]
-                vec = OpenMaya.MVector(p.world_point) - origin
-                p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * params.normalization_dist)))
+            update_normalization_dist()
         if params.loop_animation:
             params.motion_trail_points[0] = params.motion_trail_points[-1]
         set_actual_trail(params.motion_trail_points)
@@ -202,13 +210,33 @@ def paint_trajectory_drag():
         if drag_position.world_point.x < params.brush.last_drag_point.world_point.x:
             adjust *= -1
 
-        if 'shift' in params.brush.modifier:
-            params.brush.adjust_inner_radius(adjust)
+        if 'ctrl' in params.brush.modifier:
+            params.adjust_normalization_dist(adjust)
+            cmds.headsUpMessage("distance: " + str(params.normalization_dist), time=1.0)
         else:
-            params.brush.adjust_radius(adjust)
-        cmds.headsUpMessage("radius: " + str(params.brush.inner_radius) + " / " + str(params.brush.radius), time=1.0)
+            if 'shift' in params.brush.modifier:
+                params.brush.adjust_inner_radius(adjust)
+            else:
+                params.brush.adjust_radius(adjust)
+            cmds.headsUpMessage("radius: " + str(params.brush.inner_radius) + " / " + str(params.brush.radius), time=1.0)
 
     params.brush.last_drag_point = drag_position
+
+
+def update_normalization_dist():
+    global params
+    for i in range(len(params.motion_trail_points) - 1):
+        p = params.motion_trail_points[i]
+        origin = params.animated_translations[i]
+        vec = OpenMaya.MVector(p.world_point) - origin
+        p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * params.normalization_dist)))
+
+
+def get_camera_position(): # TODO move to utility file
+    view = OpenMayaUI.M3dView.active3dView()
+    camera = OpenMayaUI.M3dView.getCamera(view)
+    cam_matrix = camera.exclusiveMatrix()
+    return OpenMaya.MVector(cam_matrix.getElement(3, 0), cam_matrix.getElement(3, 1), cam_matrix.getElement(3, 2))
 
 
 def drag_points(brush, drag_point, points):
