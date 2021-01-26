@@ -34,20 +34,14 @@ class PaintTrajectoryParams:
         end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(OpenMaya.MTime.uiUnit()))
         print('start frame ' + str(start_frame) + ' end frame ' + str(end_frame))
 
-        # TODO remove spaceLocator hack and get correct absolute world space translation
-        temp_locator = cmds.spaceLocator()
-        cmds.parentConstraint(animated_dag_path, temp_locator, maintainOffset=False)
         self.animated_translations = []
-
-        original_ctx = OpenMaya.MDGContext(OpenMaya.MTime(0, OpenMaya.MTime.uiUnit()))
-        original_ctx = original_ctx.makeCurrent()
+        animated_func = OpenMaya.MFnTransform(animated_dag_path)
+        original_ctx = OpenMaya.MDGContext(OpenMaya.MTime(0, OpenMaya.MTime.uiUnit())).makeCurrent()
         for i in range(start_frame, end_frame):
             time_ctx = OpenMaya.MDGContext(OpenMaya.MTime(i, OpenMaya.MTime.uiUnit()))
             time_ctx.makeCurrent()
-            t = cmds.xform(temp_locator, query=True, translation=True, worldSpace=True)
-            self.animated_translations.append(OpenMaya.MVector(t[0], t[1], t[2]))
+            self.animated_translations.append(animated_func.rotatePivot(OpenMaya.MSpace.kWorld))
         original_ctx.makeCurrent()
-        cmds.delete(temp_locator)
 
 
 class Point:
