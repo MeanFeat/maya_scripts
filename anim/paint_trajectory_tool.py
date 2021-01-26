@@ -1,5 +1,4 @@
 import math
-import sys
 
 import maya.cmds as cmds
 import maya.mel as mel
@@ -7,6 +6,7 @@ from maya.api import OpenMaya
 from maya.api import OpenMayaUI
 from maya.api import OpenMayaAnim
 from anim.anim_layer import anim_layer
+from core.debug import fail_exit
 
 params = None
 maya_useNewAPI = True
@@ -28,7 +28,7 @@ class PaintTrajectoryParams:
         animated_dag_path, animated_object = selection_list.getComponent(0)
 
         if not OpenMayaAnim.MAnimUtil.isAnimated(animated_dag_path):
-            cancel_tool("please select an animated object")
+            fail_exit("please select an animated object")
 
         start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(OpenMaya.MTime.uiUnit()))
         end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(OpenMaya.MTime.uiUnit()))
@@ -164,7 +164,7 @@ def paint_trajectory_press():
     get_motion_trail_from_scene()
     """
     if len(params.motion_trail_points) is not len(params.animated_translations):
-        cancel_tool("motion trail points ("+str(len(params.motion_trail_points))+")  not the same length as animated translations ("
+        fail_exit("motion trail points ("+str(len(params.motion_trail_points))+")  not the same length as animated translations ("
                     + str(len(params.animated_translations)) + ")")
     """
     params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
@@ -183,7 +183,7 @@ def get_motion_trail_from_scene():
 
 
 def smooth_points():
-    cancel_tool("smooth not implemented")
+    fail_exit("smooth not implemented")
     pass
 
 
@@ -232,7 +232,7 @@ def update_normalization_dist():
         p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * params.normalization_dist)))
 
 
-def get_camera_position(): # TODO move to utility file
+def get_camera_position():  # TODO move to utility file
     view = OpenMayaUI.M3dView.active3dView()
     camera = OpenMayaUI.M3dView.getCamera(view)
     cam_matrix = camera.exclusiveMatrix()
@@ -255,7 +255,8 @@ def paint_trajectory_init():
     if not selection_list.isEmpty():
         params = PaintTrajectoryParams(selection_list)
     else:
-        cancel_tool("please select an obect")
+        fail_exit("please select an object")
+        cmds.exitTool()
 
     cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
                         pressCommand='paint_trajectory_press()', dragCommand='paint_trajectory_drag()',
@@ -264,7 +265,3 @@ def paint_trajectory_init():
     cmds.setToolTo(params.context)
 
 
-def cancel_tool(string):
-    print(string)
-    cmds.headsUpMessage(string, time=2.0)
-    sys.exit()
