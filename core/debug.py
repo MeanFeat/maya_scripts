@@ -1,5 +1,5 @@
 import sys
-import maya.cmds as cmds
+from maya import cmds
 
 
 def fail_exit(msg='the script has failed'):

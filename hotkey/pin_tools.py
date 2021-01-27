@@ -1,6 +1,7 @@
-import maya.cmds as cmds
+from maya import cmds
 
 
+# TODO re-write to use actual translations and matrices
 def pin_translate(sel):
     for s in sel:
         pin_name = s + "_TranslatePin"

@@ -1,11 +1,7 @@
 import math
-
-import maya.cmds as cmds
-import maya.mel as mel
-from maya.api import OpenMaya
-from maya.api import OpenMayaUI
-from maya.api import OpenMayaAnim
-from anim.anim_layer import anim_layer
+from maya import cmds, mel
+from maya.api import OpenMaya, OpenMayaUI, OpenMayaAnim
+from anim.anim_layer import AnimLayer
 from core.debug import fail_exit
 
 params = None
@@ -20,7 +16,7 @@ class PaintTrajectoryParams:
 
     loop_animation = False
 
-    anim_layer = anim_layer('paint_trajectory_layer')
+    anim_layer = AnimLayer('paint_trajectory_layer')
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
@@ -230,13 +226,6 @@ def update_normalization_dist():
         origin = params.animated_translations[i]
         vec = OpenMaya.MVector(p.world_point) - origin
         p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * params.normalization_dist)))
-
-
-def get_camera_position():  # TODO move to utility file
-    view = OpenMayaUI.M3dView.active3dView()
-    camera = OpenMayaUI.M3dView.getCamera(view)
-    cam_matrix = camera.exclusiveMatrix()
-    return OpenMaya.MVector(cam_matrix.getElement(3, 0), cam_matrix.getElement(3, 1), cam_matrix.getElement(3, 2))
 
 
 def drag_points(brush, drag_point, points):
