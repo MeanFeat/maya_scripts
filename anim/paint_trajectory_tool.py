@@ -1,6 +1,6 @@
 import math
 from maya import cmds, mel
-from maya.api import OpenMaya, OpenMayaUI, OpenMayaAnim
+from maya.api import OpenMaya, OpenMayaAnim
 from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace
 from maya.api.OpenMayaUI import M3dView
 from anim.anim_layer import AnimLayer
@@ -37,7 +37,7 @@ class PaintTrajectoryParams:
         self.animated_translations = []
         animated_func = OpenMaya.MFnTransform(animated_dag_path)
         original_ctx = OpenMaya.MDGContext.current()
-        for i in range(start_frame, end_frame):
+        for i in range(start_frame, end_frame + 1):
             time_ctx = OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))
             time_ctx.makeCurrent()
             t = animated_func.rotatePivot(MSpace.kWorld)
@@ -171,11 +171,12 @@ def paint_trajectory_press():
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorE_L3, "press", "paint_trajectory")
     # update from the scene in case we undo
     get_motion_trail_from_scene()
-    """
-    if len(params.motion_trail_points) is not len(params.animated_translations):
-        fail_exit("motion trail points ("+str(len(params.motion_trail_points))+")  not the same length as animated translations ("
-                    + str(len(params.animated_translations)) + ")")
-    """
+
+    assert len(params.motion_trail_points) is len(params.animated_translations), "motion trail points (" \
+                                                                                 + str(len(params.motion_trail_points)) \
+                                                                                 + ")  not the same length as animated translations (" \
+                                                                                 + str(len(params.animated_translations)) + ") "
+
     params.brush.anchor_point = PTPoint(cmds.draggerContext(params.context, query=True, anchorPoint=True))
 
     update_feather_mask(params.brush.anchor_point.world_point)
