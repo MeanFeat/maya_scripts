@@ -13,6 +13,7 @@ class PaintTrajectoryParams:
 
     normalize_to_origin = True
     normalization_dist = 12
+    should_update_on_release = False
 
     loop_animation = False
 
@@ -51,26 +52,28 @@ class PaintTrajectoryParams:
         OpenMayaUI.M3dView.active3dView().refresh()
 
 
-class Point:
-    screen_point = OpenMaya.MPoint()
+class PTPoint:
+    view_point = OpenMaya.MPoint()
     world_point = OpenMaya.MPoint()
 
-    def __init__(self, w, f=0):
+    def __init__(self, w=None, f=0):
+        if w is None:
+            w = [0, 0, 0]
         self.set_world_point(OpenMaya.MPoint(w[0], w[1], w[2]))
         self.feathering = f
 
     def set_world_point(self, p):
         self.world_point = p
-        self.screen_point = world_to_view(p)
+        self.view_point = world_to_view(p)
 
-    def set_screen_point(self, p):
-        self.screen_point = p
+    def set_view_point(self, p):
+        self.view_point = p
         self.world_point = view_to_world(p)
 
     def within_dist(self, other, t):
         """ [bool, distance] when false returns a distance of 0 """
         ss_other = world_to_view(other)
-        delta = OpenMaya.MVector(self.screen_point - ss_other)
+        delta = OpenMaya.MVector(self.view_point - ss_other)
         if abs(delta.x) < t and abs(delta.y) < t:
             dist = delta.length()
             if dist < t:
@@ -78,15 +81,17 @@ class Point:
         return False, 0
 
     def __str__(self):
-        result = 'world ' + str(self.world_point) + ' screen ' + str(self.screen_point)
+        result = 'world ' + str(self.world_point) + ' view ' + str(self.view_point)
         return result
 
 
+# TODO move out to general
 def world_to_view(p):
     x, y, b = OpenMayaUI.M3dView.active3dView().worldToView(p)
     return OpenMaya.MPoint(x, y)
 
 
+# TODO move out to general
 def view_to_world(p):
     wp = OpenMaya.MPoint()
     wv = OpenMaya.MVector()
@@ -99,8 +104,8 @@ class PaintParams:
         self.modifier = ''
         self.radius = 50
         self.inner_radius = 10
-        self.current_anchor_point = OpenMaya.MPoint()
-        self.last_drag_point = OpenMaya.MPoint()
+        self.current_anchor_point = PTPoint()
+        self.last_drag_point = PTPoint
         self.string = ''
 
     def adjust_radius(self, value):
@@ -163,7 +168,7 @@ def paint_trajectory_press():
         fail_exit("motion trail points ("+str(len(params.motion_trail_points))+")  not the same length as animated translations ("
                     + str(len(params.animated_translations)) + ")")
     """
-    params.brush.current_anchor_point = Point(cmds.draggerContext(params.context, query=True, anchorPoint=True))
+    params.brush.current_anchor_point = PTPoint(cmds.draggerContext(params.context, query=True, anchorPoint=True))
 
     update_feather_mask(params.brush.current_anchor_point.world_point)
     params.brush.last_drag_point = params.brush.current_anchor_point
@@ -174,7 +179,7 @@ def get_motion_trail_from_scene():
     global params
     params.motion_trail_points = []
     for trail_point in cmds.getAttr('motionTrail1.points'):
-        p = Point(trail_point)
+        p = PTPoint(trail_point)
         params.motion_trail_points.append(p)
 
 
@@ -185,16 +190,18 @@ def smooth_points():
 
 def paint_trajectory_drag():
     global params
-    drag_position = Point(cmds.draggerContext(params.context, query=True, dragPoint=True))
+    drag_position = PTPoint(cmds.draggerContext(params.context, query=True, dragPoint=True))
     button = cmds.draggerContext(params.context, query=True, button=True)
 
     if button == 1:
-        if 'shift' in params.brush.modifier:
+        if 'ctrl' in params.brush.modifier:
+            drag_normalization_dist(drag_position)
+        elif 'shift' in params.brush.modifier:
             smooth_points()
         else:
             drag_points(params.brush, drag_position.world_point, params.motion_trail_points)
 
-        if params.normalize_to_origin:
+        if params.normalize_to_origin and not params.should_update_on_release:
             update_normalization_dist()
         if params.loop_animation:
             params.motion_trail_points[0] = params.motion_trail_points[-1]
@@ -202,13 +209,11 @@ def paint_trajectory_drag():
         OpenMayaUI.M3dView.active3dView().refresh()
 
     if button == 2:
-        adjust = 2
-        if drag_position.world_point.x < params.brush.last_drag_point.world_point.x:
-            adjust *= -1
+        adjust = int(min(max(-1, drag_position.view_point.x - params.brush.last_drag_point.view_point.x), 1))
 
         if 'ctrl' in params.brush.modifier:
-            params.adjust_normalization_dist(adjust)
-            cmds.headsUpMessage("distance: " + str(params.normalization_dist), time=1.0)
+            # params.adjust_normalization_dist(adjust)
+            fail_exit("nothing implemented")
         else:
             if 'shift' in params.brush.modifier:
                 params.brush.adjust_inner_radius(adjust)
@@ -217,6 +222,16 @@ def paint_trajectory_drag():
             cmds.headsUpMessage("radius: " + str(params.brush.inner_radius) + " / " + str(params.brush.radius), time=1.0)
 
     params.brush.last_drag_point = drag_position
+
+
+def drag_normalization_dist(drag_position):
+    global params
+    start = params.brush.last_drag_point
+    end = drag_position
+    view_delta = min(max(-1, end.view_point.x - start.view_point.x), 1)
+    adjustment = OpenMaya.MVector(end.world_point - start.world_point).length()
+    params.normalization_dist = max(1, params.normalization_dist + adjustment * view_delta)
+    cmds.headsUpMessage("distance: " + str(int(params.normalization_dist)), time=1.0)
 
 
 def update_normalization_dist():
@@ -235,7 +250,11 @@ def drag_points(brush, drag_point, points):
 
 
 def paint_trajectory_release():
-    return
+    global params
+    if params.should_update_on_release:
+        update_normalization_dist()
+        set_actual_trail(params.motion_trail_points)
+        OpenMayaUI.M3dView.active3dView().refresh()
 
 
 def paint_trajectory_init():
@@ -245,12 +264,9 @@ def paint_trajectory_init():
         params = PaintTrajectoryParams(selection_list)
     else:
         fail_exit("please select an object")
-        cmds.exitTool()
 
     cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
                         pressCommand='paint_trajectory_press()', dragCommand='paint_trajectory_drag()',
                         releaseCommand='paint_trajectory_release()',
                         space='world', cursor='crossHair', undoMode="step")
     cmds.setToolTo(params.context)
-
-
