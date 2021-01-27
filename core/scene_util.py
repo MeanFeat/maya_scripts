@@ -1,5 +1,6 @@
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaUI
+from maya.api.OpenMaya import MVector
 
 
 def get_playback_slider():
@@ -23,7 +24,7 @@ def get_camera_position():  # TODO move to utility file
     view = OpenMayaUI.M3dView.active3dView()
     camera = OpenMayaUI.M3dView.getCamera(view)
     cam_matrix = camera.exclusiveMatrix()
-    return OpenMaya.MVector(cam_matrix.getElement(3, 0), cam_matrix.getElement(3, 1), cam_matrix.getElement(3, 2))
+    return MVector(cam_matrix.getElement(3, 0), cam_matrix.getElement(3, 1), cam_matrix.getElement(3, 2))
 
 
 def get_world_right():

@@ -1,8 +1,11 @@
 import math
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaUI, OpenMayaAnim
+from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace
+from maya.api.OpenMayaUI import M3dView
 from anim.anim_layer import AnimLayer
 from core.debug import fail_exit
+from maya.OpenMaya import MProfiler, MProfilingScope
 
 params = None
 maya_useNewAPI = True
@@ -27,18 +30,18 @@ class PaintTrajectoryParams:
         if not OpenMayaAnim.MAnimUtil.isAnimated(animated_dag_path):
             fail_exit("please select an animated object")
 
-        start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(OpenMaya.MTime.uiUnit()))
-        end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(OpenMaya.MTime.uiUnit()))
+        start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(MTime.uiUnit()))
+        end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(MTime.uiUnit()))
         print('start frame ' + str(start_frame) + ' end frame ' + str(end_frame))
 
         self.animated_translations = []
         animated_func = OpenMaya.MFnTransform(animated_dag_path)
         original_ctx = OpenMaya.MDGContext.current()
         for i in range(start_frame, end_frame):
-            time_ctx = OpenMaya.MDGContext(OpenMaya.MTime(i, OpenMaya.MTime.uiUnit()))
+            time_ctx = OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))
             time_ctx.makeCurrent()
-            t = animated_func.rotatePivot(OpenMaya.MSpace.kWorld)
-            self.animated_translations.append(OpenMaya.MVector(t))
+            t = animated_func.rotatePivot(MSpace.kWorld)
+            self.animated_translations.append(MVector(t))
         original_ctx.makeCurrent()
 
     def adjust_normalization_dist(self, value):
@@ -49,17 +52,17 @@ class PaintTrajectoryParams:
             self.normalization_dist = 1000
         update_normalization_dist()
         set_actual_trail(self.motion_trail_points)
-        OpenMayaUI.M3dView.active3dView().refresh()
+        M3dView.active3dView().refresh()
 
 
 class PTPoint:
-    view_point = OpenMaya.MPoint()
-    world_point = OpenMaya.MPoint()
+    view_point = MPoint()
+    world_point = MPoint()
 
     def __init__(self, w=None, f=0):
         if w is None:
             w = [0, 0, 0]
-        self.set_world_point(OpenMaya.MPoint(w[0], w[1], w[2]))
+        self.set_world_point(MPoint(w[0], w[1], w[2]))
         self.feathering = f
 
     def set_world_point(self, p):
@@ -73,7 +76,7 @@ class PTPoint:
     def within_dist(self, other, t):
         """ [bool, distance] when false returns a distance of 0 """
         ss_other = world_to_view(other)
-        delta = OpenMaya.MVector(self.view_point - ss_other)
+        delta = MVector(self.view_point - ss_other)
         if abs(delta.x) < t and abs(delta.y) < t:
             dist = delta.length()
             if dist < t:
@@ -87,15 +90,17 @@ class PTPoint:
 
 # TODO move out to general
 def world_to_view(p):
-    x, y, b = OpenMayaUI.M3dView.active3dView().worldToView(p)
-    return OpenMaya.MPoint(x, y)
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorB_L1, "world_to_view", "paint_trajectory")
+    x, y, b = M3dView.active3dView().worldToView(p)
+    return MPoint(x, y)
 
 
 # TODO move out to general
 def view_to_world(p):
-    wp = OpenMaya.MPoint()
-    wv = OpenMaya.MVector()
-    OpenMayaUI.M3dView.active3dView().viewToWorld(int(p.x), int(p.y), wp, wv)
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorB_L2, "view_to_world", "paint_trajectory")
+    wp = MPoint()
+    wv = MVector()
+    M3dView.active3dView().viewToWorld(int(p.x), int(p.y), wp, wv)
     return wp
 
 
@@ -105,7 +110,7 @@ class PaintParams:
         self.radius = 50
         self.inner_radius = 10
         self.anchor_point = PTPoint()
-        self.last_drag_point = PTPoint
+        self.last_drag_point = PTPoint()
         self.string = ''
 
     def adjust_radius(self, value):
@@ -141,6 +146,7 @@ class PaintParams:
 
 
 def update_feather_mask(brush_location):
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorB_L3, "update_feather_mask", "paint_trajectory")
     global params
     for p in params.motion_trail_points:
         result, dist = p.within_dist(brush_location, params.brush.radius)
@@ -151,6 +157,7 @@ def update_feather_mask(brush_location):
 
 
 def set_actual_trail(trail_points):
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorC_L1, "set_actual_trail", "paint_trajectory")
     coordinates = ''
     for p in trail_points:
         coordinates += str(p.world_point.x) + ' ' + str(p.world_point.y) + ' ' + str(p.world_point.z) + ' ' + str(p.world_point.w) + ' '
@@ -160,7 +167,8 @@ def set_actual_trail(trail_points):
 
 def paint_trajectory_press():
     global params
-
+    # cmds.profiler(sampling=True)
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorE_L3, "press", "paint_trajectory")
     # update from the scene in case we undo
     get_motion_trail_from_scene()
     """
@@ -176,6 +184,7 @@ def paint_trajectory_press():
 
 
 def get_motion_trail_from_scene():
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorE_L1, "get_motion_trail_from_scene", "paint_trajectory")
     global params
     params.motion_trail_points = []
     for trail_point in cmds.getAttr('motionTrail1.points'):
@@ -189,6 +198,7 @@ def smooth_points():
 
 
 def paint_trajectory_drag():
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorE_L2, "drag", "paint_trajectory")
     global params
     drag_position = PTPoint(cmds.draggerContext(params.context, query=True, dragPoint=True))
     button = cmds.draggerContext(params.context, query=True, button=True)
@@ -206,7 +216,7 @@ def paint_trajectory_drag():
         if params.loop_animation:
             params.motion_trail_points[0] = params.motion_trail_points[-1]
         set_actual_trail(params.motion_trail_points)
-        OpenMayaUI.M3dView.active3dView().refresh()
+        M3dView.active3dView().refresh()
 
     if button == 2:
         adjust = int(min(max(-1, drag_position.view_point.x - params.brush.last_drag_point.view_point.x), 1))
@@ -225,36 +235,40 @@ def paint_trajectory_drag():
 
 
 def drag_normalization_dist(drag_position):
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L1, "drag_normalization_dist", "paint_trajectory")
     global params
     start = params.brush.last_drag_point
     end = drag_position
     view_delta = min(max(-1, end.view_point.x - start.view_point.x), 1)
-    adjustment = OpenMaya.MVector(end.world_point - start.world_point).length()
+    adjustment = MVector(end.world_point - start.world_point).length()
     params.normalization_dist = max(1, params.normalization_dist + adjustment * view_delta)
     cmds.headsUpMessage("distance: " + str(int(params.normalization_dist)), time=1.0)
 
 
 def update_normalization_dist():
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L2, "update_normalization_dist", "paint_trajectory")
     global params
     for i in range(len(params.motion_trail_points) - 1):
         p = params.motion_trail_points[i]
         origin = params.animated_translations[i]
-        vec = OpenMaya.MVector(p.world_point) - origin
-        p.set_world_point(OpenMaya.MPoint(origin + (vec.normal() * params.normalization_dist)))
+        vec = MVector(p.world_point) - origin
+        p.set_world_point(MPoint(origin + (vec.normal() * params.normalization_dist)))
 
 
 def drag_points(brush, drag_point, points):
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L3, "drag_points", "paint_trajectory")
     for p in points:
         if p.feathering > 0:
             p.set_world_point(p.world_point + ((drag_point - brush.last_drag_point.world_point) * p.feathering))
 
 
 def paint_trajectory_release():
+    # cmds.profiler(sampling=False)
     global params
     if params.should_update_on_release:
         update_normalization_dist()
         set_actual_trail(params.motion_trail_points)
-        OpenMayaUI.M3dView.active3dView().refresh()
+        M3dView.active3dView().refresh()
 
     if params.brush.anchor_point is params.brush.last_drag_point:
         print(params.brush.modifier + " click it")
