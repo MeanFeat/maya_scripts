@@ -104,7 +104,7 @@ class PaintParams:
         self.modifier = ''
         self.radius = 50
         self.inner_radius = 10
-        self.current_anchor_point = PTPoint()
+        self.anchor_point = PTPoint()
         self.last_drag_point = PTPoint
         self.string = ''
 
@@ -168,10 +168,10 @@ def paint_trajectory_press():
         fail_exit("motion trail points ("+str(len(params.motion_trail_points))+")  not the same length as animated translations ("
                     + str(len(params.animated_translations)) + ")")
     """
-    params.brush.current_anchor_point = PTPoint(cmds.draggerContext(params.context, query=True, anchorPoint=True))
+    params.brush.anchor_point = PTPoint(cmds.draggerContext(params.context, query=True, anchorPoint=True))
 
-    update_feather_mask(params.brush.current_anchor_point.world_point)
-    params.brush.last_drag_point = params.brush.current_anchor_point
+    update_feather_mask(params.brush.anchor_point.world_point)
+    params.brush.last_drag_point = params.brush.anchor_point
     params.brush.modifier = cmds.draggerContext(params.context, query=True, modifier=True)
 
 
@@ -255,6 +255,9 @@ def paint_trajectory_release():
         update_normalization_dist()
         set_actual_trail(params.motion_trail_points)
         OpenMayaUI.M3dView.active3dView().refresh()
+
+    if params.brush.anchor_point is params.brush.last_drag_point:
+        print(params.brush.modifier + " click it")
 
 
 def paint_trajectory_init():
