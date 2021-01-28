@@ -12,6 +12,15 @@ params = None
 maya_useNewAPI = True
 
 
+class LockAxis:
+    kNothing = 0
+    kHorizontal = 1
+    kVertical = 2
+
+    def __init__(self):
+        pass
+
+
 class PaintTrajectoryParams:
     motion_trail_points = None
 
@@ -25,19 +34,21 @@ class PaintTrajectoryParams:
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
-        self.brush = PaintParams()
+        self.brush = BrushParams()
         animated_dag_path, animated_object = selection_list.getComponent(0)
 
         if not OpenMayaAnim.MAnimUtil.isAnimated(animated_dag_path):
             fail_exit("please select an animated object")
 
-        start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(MTime.uiUnit()))
-        end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(MTime.uiUnit()))
-        print('start frame ' + str(start_frame) + ' end frame ' + str(end_frame))
+        self.start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(MTime.uiUnit()))
+        self.end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(MTime.uiUnit()))
+        self.frame_count = self.end_frame - self.start_frame
+
+        print('srart frame {s} end frame {e} total {t}'.format(s=self.start_frame, e=self.end_frame, t=self.frame_count))
 
         self.animated_translations = []
         animated_func = OpenMaya.MFnTransform(animated_dag_path)
-        for i in range(start_frame, end_frame + 1):
+        for i in range(self.start_frame, self.end_frame + 1):
             with MDGContextGuard(OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))) as guard:
                 t = animated_func.rotatePivot(MSpace.kWorld)
             self.animated_translations.append(MVector(t))
@@ -71,15 +82,15 @@ class PTPoint:
         self.view_point = p
         self.world_point = view_to_world(p)
 
-    def within_dist(self, other, radius):
-        """ [bool, distance] when false returns a distance of 0 """
-        ss_other = world_to_view(other)
-        delta = MVector(self.view_point - ss_other)
+    def within_dist(self, other, radius, space=MSpace.kWorld):  # type: (MPoint, float, MSpace) -> tuple[bool, float]
+        if space is MSpace.kWorld:
+            other = world_to_view(other)
+        delta = MVector(self.view_point - other)
         if abs(delta.x) < radius and abs(delta.y) < radius:
             dist = delta.length()
             if dist < radius:
                 return True, dist
-        return False, 0
+        return False, 0.0
 
     def __str__(self):
         result = 'world ' + str(self.world_point) + ' view ' + str(self.view_point)
@@ -87,14 +98,14 @@ class PTPoint:
 
 
 # TODO move out to general
-def world_to_view(p):
+def world_to_view(p):  # type (MPoint) -> MPoint
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorB_L1, "world_to_view", "paint_trajectory")
     x, y, b = M3dView.active3dView().worldToView(p)
     return MPoint(x, y)
 
 
 # TODO move out to general
-def view_to_world(p):
+def view_to_world(p):  # type (MPoint) -> MPoint
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorB_L2, "view_to_world", "paint_trajectory")
     wp = MPoint()
     wv = MVector()
@@ -102,7 +113,9 @@ def view_to_world(p):
     return wp
 
 
-class PaintParams:
+class BrushParams:
+    lock_axis = LockAxis()
+
     def __init__(self):
         self.modifier = ''
         self.radius = 50
@@ -169,11 +182,10 @@ def paint_trajectory_press():
 
     get_motion_trail_from_scene()  # update from the scene in case we undo
 
-    """
-    assert len(params.motion_trail_points) is len(params.animated_translations), \
+    assert len(params.motion_trail_points) == len(params.animated_translations), \
         "motion trail points ({mtp}) not the same length as animated translations ({at})" \
-        .format(mtp=len(params.motion_trail_points), at=len(params.animated_translations))
-    """
+            .format(mtp=len(params.motion_trail_points), at=len(params.animated_translations))
+
     params.brush.anchor_point = PTPoint(cmds.draggerContext(params.context, query=True, anchorPoint=True))
 
     update_feather_mask(params.brush.anchor_point.world_point)
@@ -203,7 +215,15 @@ def paint_trajectory_drag():
 
     if button == 1:
         if 'ctrl' in params.brush.modifier:
-            drag_normalization_dist(drag_position)
+            if params.brush.lock_axis is LockAxis.kNothing:
+                delta = drag_position.view_point - params.brush.anchor_point.view_point
+                if MVector(delta).length() >= 5:
+                    params.brush.lock_axis = LockAxis.kHorizontal if abs(delta.x) > abs(delta.y) else LockAxis.kVertical
+            elif params.brush.lock_axis is LockAxis.kHorizontal:
+                drag_normalization_dist(params, drag_position)
+            else:
+                drag_smooth_timeline(params, drag_position)
+
         elif 'shift' in params.brush.modifier:
             smooth_points()
         else:
@@ -220,8 +240,7 @@ def paint_trajectory_drag():
         adjust = int(min(max(-1, drag_position.view_point.x - params.brush.last_drag_point.view_point.x), 1))
 
         if 'ctrl' in params.brush.modifier:
-            # params.adjust_normalization_dist(adjust)
-            fail_exit("nothing implemented")
+            print("nothing implemented")
         else:
             if 'shift' in params.brush.modifier:
                 params.brush.adjust_inner_radius(adjust)
@@ -232,15 +251,30 @@ def paint_trajectory_drag():
     params.brush.last_drag_point = drag_position
 
 
-def drag_normalization_dist(drag_position):
+def drag_normalization_dist(ptp, end):   # type: (PaintTrajectoryParams, PTPoint) -> None
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L1, "drag_normalization_dist", "paint_trajectory")
-    global params
-    start = params.brush.last_drag_point
-    end = drag_position
+    start = ptp.brush.last_drag_point
     view_delta = min(max(-1, end.view_point.x - start.view_point.x), 1)
     adjustment = MVector(end.world_point - start.world_point).length()
-    params.normalization_dist = max(1, params.normalization_dist + adjustment * view_delta)
-    cmds.headsUpMessage("distance: " + str(int(params.normalization_dist)), time=1.0)
+    ptp.normalization_dist = max(1, ptp.normalization_dist + adjustment * view_delta)
+    cmds.headsUpMessage("distance: " + str(int(ptp.normalization_dist)), time=1.0)
+
+
+def drag_smooth_timeline(ptp, end):   # type: (PaintTrajectoryParams, PTPoint) -> None
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L1, "drag_smooth_timeline", "paint_trajectory")
+    start = ptp.brush.last_drag_point
+    current_time = OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit())
+    view_delta = min(max(-1, start.view_point.y - end.view_point.y), 1)
+    adjustment = MVector(end.view_point - start.view_point).length() * view_delta * 0.125
+    new_time = current_time + adjustment
+
+    if new_time > ptp.end_frame:
+        new_time -= ptp.frame_count
+    elif new_time < ptp.start_frame:
+        new_time += ptp.frame_count
+
+    # TODO don't use pymel
+    OpenMayaAnim.MAnimControl.setCurrentTime(MTime(new_time, MTime.uiUnit()))
 
 
 def update_normalization_dist():
@@ -268,7 +302,13 @@ def paint_trajectory_release():
         M3dView.active3dView().refresh()
 
     if params.brush.anchor_point is params.brush.last_drag_point:
-        print(params.brush.modifier + " click it")
+        print("{m} click it".format(m=params.brush.modifier))
+
+    if 'ctrl' in params.brush.modifier and params.brush.lock_axis is LockAxis.kVertical:
+        current_time = round(OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit()))
+        OpenMayaAnim.MAnimControl.setCurrentTime(MTime(current_time, MTime.uiUnit()))
+
+    params.brush.lock_axis = LockAxis.kNothing
 
 
 def paint_trajectory_setup():
