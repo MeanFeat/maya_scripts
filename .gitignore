@@ -1,8 +1,8 @@
 
 .idea/
+venv/
+ptvsd/
 
 *.pyc
 
-ptvsd/
 
-venv/

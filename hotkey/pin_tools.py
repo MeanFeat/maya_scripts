@@ -14,6 +14,7 @@ def pin_translate(sel):
             cmds.select(sel)
 
 
+# TODO re-write to use actual matrix
 def pin_rotate(sel):
     for s in sel:
         pin_name = s + "_RotatePin"

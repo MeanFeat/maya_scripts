@@ -6,6 +6,7 @@ from maya.api.OpenMayaUI import M3dView
 from anim.anim_layer import AnimLayer
 from core.debug import fail_exit
 from maya.OpenMaya import MProfiler, MProfilingScope
+from maya.api.MDGContextGuard import MDGContextGuard
 
 params = None
 maya_useNewAPI = True
@@ -36,13 +37,10 @@ class PaintTrajectoryParams:
 
         self.animated_translations = []
         animated_func = OpenMaya.MFnTransform(animated_dag_path)
-        original_ctx = OpenMaya.MDGContext.current()
         for i in range(start_frame, end_frame + 1):
-            time_ctx = OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))
-            time_ctx.makeCurrent()
-            t = animated_func.rotatePivot(MSpace.kWorld)
+            with MDGContextGuard(OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))) as guard:
+                t = animated_func.rotatePivot(MSpace.kWorld)
             self.animated_translations.append(MVector(t))
-        original_ctx.makeCurrent()
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -59,27 +57,27 @@ class PTPoint:
     view_point = MPoint()
     world_point = MPoint()
 
-    def __init__(self, w=None, f=0):
-        if w is None:
-            w = [0, 0, 0]
-        self.set_world_point(MPoint(w[0], w[1], w[2]))
+    def __init__(self, wp=None, f=0):
+        if wp is None:
+            wp = [0, 0, 0]
+        self.set_world_point(MPoint(wp[0], wp[1], wp[2]))
         self.feathering = f
 
-    def set_world_point(self, p):
+    def set_world_point(self, p):  # type :(MPoint) -> None
         self.world_point = p
         self.view_point = world_to_view(p)
 
-    def set_view_point(self, p):
+    def set_view_point(self, p):  # type :(MPoint) -> None
         self.view_point = p
         self.world_point = view_to_world(p)
 
-    def within_dist(self, other, t):
+    def within_dist(self, other, radius):
         """ [bool, distance] when false returns a distance of 0 """
         ss_other = world_to_view(other)
         delta = MVector(self.view_point - ss_other)
-        if abs(delta.x) < t and abs(delta.y) < t:
+        if abs(delta.x) < radius and abs(delta.y) < radius:
             dist = delta.length()
-            if dist < t:
+            if dist < radius:
                 return True, dist
         return False, 0
 
@@ -148,7 +146,7 @@ class PaintParams:
 def update_feather_mask(brush_location):
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorB_L3, "update_feather_mask", "paint_trajectory")
     global params
-    for p in params.motion_trail_points:
+    for p in params.motion_trail_points:  # type: PTPoint
         result, dist = p.within_dist(brush_location, params.brush.radius)
         if result:
             p.feathering = params.brush.get_feathering(dist)
@@ -159,7 +157,7 @@ def update_feather_mask(brush_location):
 def set_actual_trail(trail_points):
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorC_L1, "set_actual_trail", "paint_trajectory")
     coordinates = ''
-    for p in trail_points:
+    for p in trail_points:  # type: PTPoint
         coordinates += str(p.world_point.x) + ' ' + str(p.world_point.y) + ' ' + str(p.world_point.z) + ' ' + str(p.world_point.w) + ' '
     cmd = 'setAttr motionTrail1.points -type pointArray ' + str(len(trail_points)) + ' ' + coordinates + ' ;'
     mel.eval(cmd)
@@ -167,16 +165,15 @@ def set_actual_trail(trail_points):
 
 def paint_trajectory_press():
     global params
-    # cmds.profiler(sampling=True)
-    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorE_L3, "press", "paint_trajectory")
-    # update from the scene in case we undo
-    get_motion_trail_from_scene()
+    MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L3, "paint_trajectory_press", "paint_trajectory")
 
-    assert len(params.motion_trail_points) is len(params.animated_translations), "motion trail points (" \
-                                                                                 + str(len(params.motion_trail_points)) \
-                                                                                 + ")  not the same length as animated translations (" \
-                                                                                 + str(len(params.animated_translations)) + ") "
+    get_motion_trail_from_scene()  # update from the scene in case we undo
 
+    """
+    assert len(params.motion_trail_points) is len(params.animated_translations), \
+        "motion trail points ({mtp}) not the same length as animated translations ({at})" \
+        .format(mtp=len(params.motion_trail_points), at=len(params.animated_translations))
+    """
     params.brush.anchor_point = PTPoint(cmds.draggerContext(params.context, query=True, anchorPoint=True))
 
     update_feather_mask(params.brush.anchor_point.world_point)
@@ -260,11 +257,10 @@ def drag_points(brush, drag_point, points):
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L3, "drag_points", "paint_trajectory")
     for p in points:
         if p.feathering > 0:
-            p.set_world_point(p.world_point + ((drag_point - brush.last_drag_point.world_point) * p.feathering))
+            p.set_world_point((p.world_point + (drag_point - brush.last_drag_point.world_point) * p.feathering))
 
 
 def paint_trajectory_release():
-    # cmds.profiler(sampling=False)
     global params
     if params.should_update_on_release:
         update_normalization_dist()
@@ -275,16 +271,32 @@ def paint_trajectory_release():
         print(params.brush.modifier + " click it")
 
 
+def paint_trajectory_setup():
+    # cmds.profiler(sampling=True)
+    print("tool setup")
+
+
+def paint_trajectory_exit():
+    # cmds.profiler(sampling=False)
+    print("tool exited")
+
+
 def paint_trajectory_init():
-    global params
     selection_list = OpenMaya.MGlobal.getActiveSelectionList()
     if not selection_list.isEmpty():
         params = PaintTrajectoryParams(selection_list)
     else:
         fail_exit("please select an object")
 
+    global params
+    this_is_a_string = "this is not a test"
     cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
-                        pressCommand='paint_trajectory_press()', dragCommand='paint_trajectory_drag()',
+                        pressCommand='paint_trajectory_press()',
+                        dragCommand='paint_trajectory_drag()',
                         releaseCommand='paint_trajectory_release()',
-                        space='world', cursor='crossHair', undoMode="step")
+                        initialize='paint_trajectory_setup()',
+                        finalize='paint_trajectory_exit()',
+                        projection="viewPlaneproject",
+                        space='world', cursor='crossHair', undoMode="step",
+                        drawString=this_is_a_string)
     cmds.setToolTo(params.context)
