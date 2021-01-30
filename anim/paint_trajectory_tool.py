@@ -202,6 +202,8 @@ def get_motion_trail_from_scene():
         params.motion_trail_points.append(p)
 
 
+
+
 def smooth_points():
     fail_exit("smooth not implemented")
     pass
@@ -251,7 +253,7 @@ def paint_trajectory_drag():
     params.brush.last_drag_point = drag_position
 
 
-def drag_normalization_dist(ptp, end):   # type: (PaintTrajectoryParams, PTPoint) -> None
+def drag_normalization_dist(ptp, end):  # type: (PaintTrajectoryParams, PTPoint) -> None
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L1, "drag_normalization_dist", "paint_trajectory")
     start = ptp.brush.last_drag_point
     view_delta = min(max(-1, end.view_point.x - start.view_point.x), 1)
@@ -260,7 +262,7 @@ def drag_normalization_dist(ptp, end):   # type: (PaintTrajectoryParams, PTPoint
     cmds.headsUpMessage("distance: " + str(int(ptp.normalization_dist)), time=1.0)
 
 
-def drag_smooth_timeline(ptp, end):   # type: (PaintTrajectoryParams, PTPoint) -> None
+def drag_smooth_timeline(ptp, end):  # type: (PaintTrajectoryParams, PTPoint) -> None
     MProfilingScope(MProfiler.addCategory("Python Scripts"), MProfiler.kColorA_L1, "drag_smooth_timeline", "paint_trajectory")
     start = ptp.brush.last_drag_point
     current_time = OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit())
@@ -322,14 +324,14 @@ def paint_trajectory_exit():
 
 
 def paint_trajectory_init():
+    cmds.setToolTo('selectSuperContext')  # TODO remove for final just here for rapid code testing
+    global params
     selection_list = OpenMaya.MGlobal.getActiveSelectionList()
     if not selection_list.isEmpty():
         params = PaintTrajectoryParams(selection_list)
     else:
         fail_exit("please select an object")
 
-    global params
-    this_is_a_string = "this is not a test"
     cmds.draggerContext(params.context, edit=cmds.draggerContext(params.context, exists=True),
                         pressCommand='paint_trajectory_press()',
                         dragCommand='paint_trajectory_drag()',
@@ -337,6 +339,6 @@ def paint_trajectory_init():
                         initialize='paint_trajectory_setup()',
                         finalize='paint_trajectory_exit()',
                         projection="viewPlaneproject",
-                        space='world', cursor='crossHair', undoMode="step",
-                        drawString=this_is_a_string)
+                        space='world', cursor='crossHair', undoMode="step", )
+
     cmds.setToolTo(params.context)
