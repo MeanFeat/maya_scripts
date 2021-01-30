@@ -1,6 +1,7 @@
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaUI
-from maya.api.OpenMaya import MVector
+from maya.api.OpenMaya import MVector, MPoint
+from maya.api.OpenMayaUI import M3dView
 
 
 def get_playback_slider():
@@ -11,8 +12,7 @@ def get_timeline_selection():
     return cmds.timeControl(get_playback_slider(), query=True, rangeArray=True)
 
 
-# TODO set up with actual transforms
-def create_null_on_object(item, suffix):
+def create_null_on_object(item, suffix):  # TODO set up with actual transforms
     temp_null = cmds.group(empty=True, name=item + suffix)
     temp_parent_constraint = cmds.parentConstraint(item, temp_null, mo=False)
     cmds.delete(temp_parent_constraint)
@@ -20,7 +20,7 @@ def create_null_on_object(item, suffix):
     return temp_null
 
 
-def get_camera_position():  # TODO move to utility file
+def get_camera_position():
     view = OpenMayaUI.M3dView.active3dView()
     camera = OpenMayaUI.M3dView.getCamera(view)
     cam_matrix = camera.exclusiveMatrix()
@@ -43,3 +43,15 @@ def get_world_forward():
         return OpenMaya.MVector(0, 1, 0)
     else:
         return OpenMaya.MVector(0, 0, 1)
+
+
+def world_to_view(p):  # type (MPoint) -> MPoint
+    x, y, b = M3dView.active3dView().worldToView(p)
+    return MPoint(x, y)
+
+
+def view_to_world(p):  # type (MPoint) -> MPoint
+    wp = MPoint()
+    wv = MVector()
+    M3dView.active3dView().viewToWorld(int(p.x), int(p.y), wp, wv)
+    return wp

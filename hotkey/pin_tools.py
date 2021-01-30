@@ -1,8 +1,7 @@
 from maya import cmds
 
 
-# TODO re-write to use actual translations and matrices
-def pin_translate(sel):
+def pin_translate(sel):  # TODO re-write to use actual translations and matrices
     for s in sel:
         pin_name = s + "_TranslatePin"
         if cmds.ls(pin_name):
@@ -14,8 +13,7 @@ def pin_translate(sel):
             cmds.select(sel)
 
 
-# TODO re-write to use actual matrix
-def pin_rotate(sel):
+def pin_rotate(sel):  # TODO re-write to use actual matrix
     for s in sel:
         pin_name = s + "_RotatePin"
         if cmds.ls(pin_name):
