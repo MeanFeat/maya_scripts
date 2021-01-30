@@ -105,7 +105,7 @@ class PaintTrajectoryParams:
     normalization_dist = 12
 
     loop_animation = True
-    smooth_strength = 0.25
+    smooth_strength = 0.125
 
     anim_layer = AnimLayer('paint_trajectory_layer')
 
@@ -148,6 +148,14 @@ class PaintTrajectoryParams:
             delta = end.y - start.y
         return min(max(-1, delta), 1)
 
+    def drag_trail_frame_range(self, end):
+        start = self.brush.last_drag_point
+        adjustment = MVector(end.view_point - start.view_point).length() * self.get_lock_axis_delta(end.view_point, start.view_point) * 0.125
+        current = cmds.getAttr('motionTrail1HandleShape.preFrame')
+        result = min(max(1, current + adjustment), int(self.frame_count/2))
+        cmds.setAttr('motionTrail1HandleShape.preFrame', result)
+        cmds.setAttr('motionTrail1HandleShape.postFrame', result)
+
     def drag_normalization_dist(self, end):
         start = self.brush.last_drag_point
         adjustment = MVector(end.world_point - start.world_point).length()
@@ -159,7 +167,7 @@ class PaintTrajectoryParams:
         start = self.brush.last_drag_point
         current_time = OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit())
         adjustment = MVector(end.view_point - start.view_point).length() * self.get_lock_axis_delta(end.view_point, start.view_point) * 0.125
-        new_time = current_time + adjustment
+        new_time = current_time + -adjustment
 
         if new_time > self.end_frame:
             new_time -= self.frame_count
@@ -196,6 +204,7 @@ class PaintTrajectoryParams:
     def smooth_points(self):
         for i in range(len(self.motion_trail_points)):
             if self.motion_trail_points[i].feathering > 0:
+                # if we're not looping do nothing with the the first and last frames
                 if i == len(self.motion_trail_points) - 1 and self.loop_animation:
                     self.smooth_adjacent_points(self.motion_trail_points[-2],
                                                 self.motion_trail_points[-1],
@@ -285,6 +294,8 @@ def paint_trajectory_drag():
             if params.brush.lock_axis is LockAxis.kVertical:
                 params.drag_normalization_dist(drag_point)
                 params.update_normalization_dist()
+            elif params.brush.lock_axis is LockAxis.kHorizontal:
+                params.drag_trail_frame_range(drag_point)
         else:
             if params.brush.lock_axis is LockAxis.kHorizontal:
                 if 'shift' in params.brush.modifier:
