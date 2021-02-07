@@ -14,7 +14,15 @@ class AnimLayer:
             print(name + ' already exists')
             self.scene_name = name
         else:
-            self.scene_name = cmds.animLayer(name)
+            self.scene_name = cmds.animLayer(name, override=False)
+
+    def add_rotation(self, obj_name):
+        cmds.animLayer(self.scene_name, edit=True, attribute=obj_name + '.rx')
+        cmds.animLayer(self.scene_name, edit=True, attribute=obj_name + '.ry')
+        cmds.animLayer(self.scene_name, edit=True, attribute=obj_name + '.rz')
+
+    def mute(self, m):
+        cmds.animLayer(self.scene_name, edit=True, mute=m)
 
 
 def get_text_name(layer):

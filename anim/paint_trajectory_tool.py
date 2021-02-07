@@ -1,7 +1,7 @@
 import math
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace
+from maya.api.OpenMaya import MPoint, MQuaternion, MVector, MTime, MSpace
 from maya.api.OpenMayaUI import M3dView
 from maya.api.MDGContextGuard import MDGContextGuard
 
@@ -98,11 +98,13 @@ class BrushParams:
 
 
 class AnimatedObject:
+    scene_name = None
     dag_path = None
     transform_func = None
     dag_func = None
     translation_frames = []
     rotation_frames = []
+    direction_frames = []
 
     def __init__(self):
         pass
@@ -122,9 +124,12 @@ class PaintTrajectoryTool:
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
         self.brush = BrushParams()
-        self.animated_object.dag_path, null = selection_list.getComponent(0)
+        self.animated_object.scene_name = selection_list.getSelectionStrings()[0]
+        self.anim_layer.add_rotation(self.animated_object.scene_name)
+        self.animated_object.dag_path = selection_list.getDagPath(0)
         self.animated_object.dag_func = OpenMaya.MFnDagNode(self.animated_object.dag_path)
         self.animated_object.transform_func = OpenMaya.MFnTransform(self.animated_object.dag_path)
+        print(self.animated_object.transform_func.rotationOrder())
         if not OpenMayaAnim.MAnimUtil.isAnimated(self.animated_object.dag_path):
             fail_exit("please select an animated object")
 
@@ -139,6 +144,9 @@ class PaintTrajectoryTool:
             with MDGContextGuard(OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))) as guard:
                 t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
                 r = self.animated_object.transform_func.rotation()
+                matrix = self.animated_object.transform_func.transformationMatrix()
+                axis = 0  # TODO allow change axis
+                d = MVector(matrix.getElement(axis, 0), matrix.getElement(axis, 1), matrix.getElement(axis, 2))
             '''
             print("rotation x {x} y {y} z {z}".format(x=r.x, y=r.y, z=r.z))
             print("as angle x {x} y {y} z {z}".format(x=OpenMaya.MAngle(r.x).asDegrees(),
@@ -147,6 +155,7 @@ class PaintTrajectoryTool:
             '''
             self.animated_object.translation_frames.append(MVector(t))
             self.animated_object.rotation_frames.append(r)
+            self.animated_object.direction_frames.append(d)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -249,7 +258,7 @@ class PaintTrajectoryTool:
         for i in range(len(self.motion_trail_points) - 1):
             p = self.motion_trail_points[i]
             origin = self.animated_object.translation_frames[i]
-            vec = MVector(p.world_point) - origin
+            vec = (MVector(p.world_point) - origin).normal()
             p.set_world_point(MPoint(origin + MVector(vec.normal() * self.normalization_dist)))
 
     def drag_points(self, drag_point):
@@ -264,18 +273,37 @@ class PaintTrajectoryTool:
                 self.brush.lock_axis = LockAxis.kHorizontal if abs(delta.x) > abs(delta.y) else LockAxis.kVertical
 
     def update_animated_frames(self):
-        pass
+        for i in range(len(self.animated_object.direction_frames)):
+            p = self.motion_trail_points[i]
+            #with MDGContextGuard(OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))) as guard:
+            #    r = self.animated_object.transform_func.rotation()
+            r = self.animated_object.rotation_frames[i]
+            origin = self.animated_object.translation_frames[i]
+            vec = (MVector(p.world_point) - origin).normal()
+            direction = self.animated_object.direction_frames[i].normal()
+            quat = direction.rotateTo(vec)
+            rot_key = quat.asEulerRotation()
+
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
+                             v=OpenMaya.MAngle(r.x).asDegrees() + OpenMaya.MAngle(rot_key.x).asDegrees(),
+                             at='rotateX', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
+                             v=OpenMaya.MAngle(r.y).asDegrees() + OpenMaya.MAngle(rot_key.y).asDegrees(),
+                             at='rotateY', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
+                             v=OpenMaya.MAngle(r.z).asDegrees() + OpenMaya.MAngle(rot_key.z).asDegrees(),
+                             at='rotateZ', time=i)
 
 
 def paint_trajectory_press():
     global tool
     tool.get_motion_trail_from_scene()  # update from the scene in case we undo
-
+    '''
     assert (len(tool.motion_trail_points) == len(tool.animated_object.translation_frames) and
-            len(tool.motion_trail_points) == len(tool.animated_object.rotation_frames),
+            len(tool.motion_trail_points) == len(tool.animated_object.direction_frames),
             "motion trail points ({mtp}) not the same length as animated frames ({at})".format(mtp=len(tool.motion_trail_points),
                                                                                                at=len(tool.animated_object.translation_frames)))
-
+    '''
     tool.brush.anchor_point = PTPoint(cmds.draggerContext(tool.context, query=True, anchorPoint=True))
 
     tool.update_feather_mask(tool.brush.anchor_point.world_point)
@@ -308,7 +336,6 @@ def paint_trajectory_drag():
             average = MPoint((MVector(tool.motion_trail_points[0].world_point) + MVector(tool.motion_trail_points[-1].world_point)) * 0.5)
             tool.motion_trail_points[0].set_world_point(average)
             tool.motion_trail_points[-1].set_world_point(average)
-
 
     if button == 2:
         adjust = int(min(max(-1, drag_point.view_point.x - tool.brush.last_drag_point.view_point.x), 1))
@@ -344,7 +371,6 @@ def paint_trajectory_release():
     tool.brush.lock_axis = LockAxis.kNothing
 
     tool.update_animated_frames()
-    cmds.select('pCone1')
 
 
 def paint_trajectory_setup():
