@@ -135,26 +135,26 @@ class PaintTrajectoryTool:
         self.start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(MTime.uiUnit()))
         self.end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(MTime.uiUnit()))
         self.frame_count = self.end_frame - self.start_frame
+        self.create_base_frames()
+        self.get_motion_trail_from_scene()
+        self.normalization_dist = MVector(self.animated_object.basis_frames[0].translation
+                                          - MVector(self.motion_trail_points[0].world_point)).length()
 
-        print('start frame {s} end frame {e} total {t}'.format(s=self.start_frame, e=self.end_frame, t=self.frame_count))
-
+    def create_base_frames(self):
         for i in range(self.start_frame, self.end_frame + 1):
             # noinspection PyUnusedLocal
-            with MDGContextGuard(OpenMaya.MDGContext(MTime(i, MTime.uiUnit()))) as guard:
-                t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
-                r = self.animated_object.transform_func.rotation()
-                matrix = self.animated_object.dag_path.inclusiveMatrix()
-                x = MVector(matrix.getElement(0, 0), matrix.getElement(0, 1), matrix.getElement(0, 2))
-                y = MVector(matrix.getElement(1, 0), matrix.getElement(1, 1), matrix.getElement(1, 2))
-                z = MVector(matrix.getElement(2, 0), matrix.getElement(2, 1), matrix.getElement(2, 2))
-                basis = Basis(t, r, x, y, z)
-            '''
-            print("rotation x {x} y {y} z {z}".format(x=r.x, y=r.y, z=r.z))
-            print("as angle x {x} y {y} z {z}".format(x=OpenMaya.MAngle(r.x).asDegrees(),
-                                                        y=OpenMaya.MAngle(r.y).asDegrees(),
-                                                        z=OpenMaya.MAngle(r.z).asDegrees()))
-            '''
+            basis = self.build_basis_at_frame(i)
             self.animated_object.basis_frames.append(basis)
+
+    def build_basis_at_frame(self, frame):
+        with MDGContextGuard(OpenMaya.MDGContext(MTime(frame, MTime.uiUnit()))) as guard:
+            t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
+            r = self.animated_object.transform_func.rotation()
+            matrix = self.animated_object.dag_path.inclusiveMatrix()
+            x = MVector(matrix.getElement(0, 0), matrix.getElement(0, 1), matrix.getElement(0, 2))
+            y = MVector(matrix.getElement(1, 0), matrix.getElement(1, 1), matrix.getElement(1, 2))
+            z = MVector(matrix.getElement(2, 0), matrix.getElement(2, 1), matrix.getElement(2, 2))
+        return Basis(t, r, x, y, z)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -314,7 +314,7 @@ class PaintTrajectoryTool:
             r = b.rotation
             origin = b.translation
             vec = (MVector(p.world_point) - MVector(origin)).normal()
-            direction = b.x_vector
+            direction = b.x_vector.normal()
             quat = direction.rotateTo(vec)
             rot_key = quat.asEulerRotation()
 
@@ -329,14 +329,10 @@ class PaintTrajectoryTool:
                              at='rotateZ', time=i)
 
 
-
-
 def paint_trajectory_press():
     global tool
     tool.get_motion_trail_from_scene()  # update from the scene in case we undo
-
     tool.brush.anchor_point = PTPoint(cmds.draggerContext(tool.context, query=True, anchorPoint=True))
-
     tool.update_feather_mask(tool.brush.anchor_point.world_point)
     tool.brush.last_drag_point = tool.brush.anchor_point
     tool.brush.modifier = cmds.draggerContext(tool.context, query=True, modifier=True)
