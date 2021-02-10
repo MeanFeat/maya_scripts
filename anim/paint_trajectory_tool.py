@@ -1,7 +1,7 @@
 import math
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace
+from maya.api.OpenMaya import MEulerRotation, MPoint, MVector, MTime, MSpace, MQuaternion
 from maya.api.OpenMayaUI import M3dView
 from maya.api.MDGContextGuard import MDGContextGuard
 
@@ -224,6 +224,7 @@ class PaintTrajectoryTool:
         cur.set_world_point(MPoint(MVector(cur.world_point) + (combined * cur.feathering)))
         prv.set_world_point(MPoint(MVector(prv.world_point) + (-combined * prv.feathering ** 2)))
         nxt.set_world_point(MPoint(MVector(nxt.world_point) + (-combined * nxt.feathering ** 2)))
+        cur.feathering = 0
 
     def smooth_points(self):
         for i in range(len(self.motion_trail_points)):
@@ -244,7 +245,6 @@ class PaintTrajectoryTool:
                                                 self.motion_trail_points[i],
                                                 self.motion_trail_points[i + 1],
                                                 self.smooth_strength)
-            self.motion_trail_points[i].feathering = 0
 
     def set_actual_trail(self):
         coordinates = ''
@@ -271,42 +271,6 @@ class PaintTrajectoryTool:
             if MVector(delta).length() >= leash:
                 self.brush.lock_axis = LockAxis.kHorizontal if abs(delta.x) > abs(delta.y) else LockAxis.kVertical
 
-    '''
-    def update_animated_frames(self):
-        angle_between_node = cmds.angleBetween(v1=(1, 0, 0), v2=(1, 0, 0), ch=True)
-        convert_x = cmds.createNode('unitConversion')
-        convert_y = cmds.createNode('unitConversion')
-        convert_z = cmds.createNode('unitConversion')
-        cmds.connectAttr(angle_between_node + '.eulerX', convert_x + '.input')
-        cmds.connectAttr(angle_between_node + '.eulerY', convert_y + '.input')
-        cmds.connectAttr(angle_between_node + '.eulerZ', convert_z + '.input')
-        for i in range(len(self.animated_object.basis_frames)):
-            p = self.motion_trail_points[i]
-            b = self.animated_object.basis_frames[i]
-            vec = (MVector(p.world_point) - MVector(b.translation)).normal()
-
-            cmds.setAttr(angle_between_node + '.vector1X', b.x_vector.x)
-            cmds.setAttr(angle_between_node + '.vector1Y', b.x_vector.y)
-            cmds.setAttr(angle_between_node + '.vector1Z', b.x_vector.z)
-            cmds.setAttr(angle_between_node + '.vector2X', vec.x)
-            cmds.setAttr(angle_between_node + '.vector2Y', vec.y)
-            cmds.setAttr(angle_between_node + '.vector2Z', vec.z)
-            cur_x = OpenMaya.MAngle(b.rotation.x).asDegrees()
-            cur_y = OpenMaya.MAngle(b.rotation.y).asDegrees()
-            cur_z = OpenMaya.MAngle(b.rotation.z).asDegrees()
-            new_x = cmds.getAttr(convert_x + '.output')
-            new_y = cmds.getAttr(convert_y + '.output')
-            new_z = cmds.getAttr(convert_z + '.output')
-
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             v=cur_x + OpenMaya.MAngle(new_x).asDegrees(), at='rotateX', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             v=cur_y + OpenMaya.MAngle(new_y).asDegrees(), at='rotateY', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             v=cur_z + OpenMaya.MAngle(new_z).asDegrees(), at='rotateZ', time=i)
-        cmds.delete(angle_between_node)
-    '''
-
     def update_animated_frames(self):
         for i in range(len(self.animated_object.basis_frames)):
             p = self.motion_trail_points[i]
@@ -317,16 +281,15 @@ class PaintTrajectoryTool:
             direction = b.x_vector.normal()
             quat = direction.rotateTo(vec)
             rot_key = quat.asEulerRotation()
+            x_correct = MQuaternion().setToXAxis(-rot_key.x)
+            final_rot = r + (quat * x_correct).asEulerRotation()
 
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             v=OpenMaya.MAngle(r.x).asDegrees() + OpenMaya.MAngle(rot_key.x).asDegrees(),
-                             at='rotateX', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             v=OpenMaya.MAngle(r.y).asDegrees() + OpenMaya.MAngle(rot_key.y).asDegrees(),
-                             at='rotateY', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             v=OpenMaya.MAngle(r.z).asDegrees() + OpenMaya.MAngle(rot_key.z).asDegrees(),
-                             at='rotateZ', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
+                             v=OpenMaya.MAngle(final_rot.x).asDegrees(), at='rotateX', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
+                             v=OpenMaya.MAngle(final_rot.y).asDegrees(), at='rotateY', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
+                             v=OpenMaya.MAngle(final_rot.z).asDegrees(), at='rotateZ', time=i)
 
 
 def paint_trajectory_press():
