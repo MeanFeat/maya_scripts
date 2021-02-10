@@ -135,26 +135,28 @@ class PaintTrajectoryTool:
         self.start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(MTime.uiUnit()))
         self.end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(MTime.uiUnit()))
         self.frame_count = self.end_frame - self.start_frame
-        self.create_base_frames()
+
         self.get_motion_trail_from_scene()
+        self.create_base_frames()
         self.normalization_dist = MVector(self.animated_object.basis_frames[0].translation
                                           - MVector(self.motion_trail_points[0].world_point)).length()
 
     def create_base_frames(self):
         for i in range(self.start_frame, self.end_frame + 1):
-            # noinspection PyUnusedLocal
             basis = self.build_basis_at_frame(i)
             self.animated_object.basis_frames.append(basis)
 
     def build_basis_at_frame(self, frame):
+        # noinspection PyUnusedLocal
         with MDGContextGuard(OpenMaya.MDGContext(MTime(frame, MTime.uiUnit()))) as guard:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
             r = self.animated_object.transform_func.rotation()
+            o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
             matrix = self.animated_object.dag_path.inclusiveMatrix()
             x = MVector(matrix.getElement(0, 0), matrix.getElement(0, 1), matrix.getElement(0, 2))
             y = MVector(matrix.getElement(1, 0), matrix.getElement(1, 1), matrix.getElement(1, 2))
             z = MVector(matrix.getElement(2, 0), matrix.getElement(2, 1), matrix.getElement(2, 2))
-        return Basis(t, r, x, y, z)
+        return Basis(t, r, o, x, y, z)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -275,14 +277,13 @@ class PaintTrajectoryTool:
         for i in range(len(self.animated_object.basis_frames)):
             p = self.motion_trail_points[i]
             b = self.animated_object.basis_frames[i]
-            r = b.rotation
             origin = b.translation
             vec = (MVector(p.world_point) - MVector(origin)).normal()
-            direction = b.x_vector.normal()
+            direction = b.offset.normal()
             quat = direction.rotateTo(vec)
             rot_key = quat.asEulerRotation()
-            x_correct = MQuaternion().setToXAxis(-rot_key.x)
-            final_rot = r + (quat * x_correct).asEulerRotation()
+            axis_correct = MQuaternion().setToXAxis(-rot_key.x)  # TODO spin axis should be arbitrary
+            final_rot = b.rotation + (quat * axis_correct).asEulerRotation()
 
             cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
                              v=OpenMaya.MAngle(final_rot.x).asDegrees(), at='rotateX', time=i)
