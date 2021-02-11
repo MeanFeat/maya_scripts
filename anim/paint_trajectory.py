@@ -10,9 +10,6 @@ from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world
 from core.basis import Basis
 
-tool = None
-maya_useNewAPI = True
-
 
 class LockAxis:
     kNothing = 0
@@ -99,42 +96,75 @@ class BrushParams:
 
 
 class AnimatedObject:
-    scene_name = None
-    dag_path = None
-    transform_func = None
-    dag_func = None
     basis_frames = []
 
-    def __init__(self):
-        pass
+    def __init__(self, selection_list):
+        self.scene_name = selection_list.getSelectionStrings()[0]
+        self.dag_path = selection_list.getDagPath(0)
+        self.dag_func = OpenMaya.MFnDagNode(self.dag_path)
+        self.transform_func = OpenMaya.MFnTransform(self.dag_path)
+
+    def get_rotation_order(self):
+        return self.transform_func.rotationOrder()
+
+
+class VisibleTimeRange:
+    start = 0
+    end = 0
+
+    def __init__(self, scene_min, scene_max, from_center=5):
+        self.from_center = from_center
+        self.scene_min = scene_min
+        self.scene_max = scene_max
+        self.update_range()
+        self.adjust_range(0.0)
+
+    def list(self):
+        index_list = []
+        for i in range(self.start, self.end+1):
+            index_list.append(i)
+        return index_list
+
+    def get_max(self):
+        time = cmds.currentTime(query=True)
+        return max(time - self.scene_min, self.scene_max - time)
+
+    def adjust_range(self, adjustment):
+        self.from_center = max(1, self.from_center + adjustment)
+        self.from_center = min(self.get_max(), self.from_center)
+        cmds.setAttr('motionTrail1HandleShape.preFrame', self.from_center)
+        cmds.setAttr('motionTrail1HandleShape.postFrame', self.from_center)
+        self.update_range()
+
+    def update_range(self):
+        time = cmds.currentTime(query=True)
+        self.start = max(self.scene_min, int(time-self.from_center))
+        self.end = min(self.scene_max, int(time+self.from_center))
 
 
 class PaintTrajectory:
     motion_trail_points = None
-
+    loop_animation = True
     normalize_to_origin = True
     normalization_dist = 12
-
-    loop_animation = True
     smooth_strength = 0.125
-    animated_object = AnimatedObject()
-    anim_layer = AnimLayer('paint_trajectory_layer')
+    scrub_scale = 0.125
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
         self.brush = BrushParams()
-        self.animated_object.scene_name = selection_list.getSelectionStrings()[0]
+        self.animated_object = AnimatedObject(selection_list)
+
+        self.anim_layer = AnimLayer('paint_trajectory_layer')
         self.anim_layer.add_rotation(self.animated_object.scene_name)
-        self.animated_object.dag_path = selection_list.getDagPath(0)
-        self.animated_object.dag_func = OpenMaya.MFnDagNode(self.animated_object.dag_path)
-        self.animated_object.transform_func = OpenMaya.MFnTransform(self.animated_object.dag_path)
-        print(self.animated_object.transform_func.rotationOrder())
+
         if not OpenMayaAnim.MAnimUtil.isAnimated(self.animated_object.dag_path):
             fail_exit("please select an animated object")
 
         self.start_frame = int(OpenMayaAnim.MAnimControl.minTime().asUnits(MTime.uiUnit()))
         self.end_frame = int(OpenMayaAnim.MAnimControl.maxTime().asUnits(MTime.uiUnit()))
         self.frame_count = self.end_frame - self.start_frame
+        self.visible_range = VisibleTimeRange(self.start_frame, self.end_frame, 5)
 
         self.get_motion_trail_from_scene()
         self.create_base_frames()
@@ -175,10 +205,7 @@ class PaintTrajectory:
     def drag_trail_frame_range(self, end):
         start = self.brush.last_drag_point
         adjustment = MVector(end.view_point - start.view_point).length() * self.get_lock_axis_delta(end.view_point, start.view_point) * 0.125
-        current = cmds.getAttr('motionTrail1HandleShape.preFrame')
-        result = min(max(1, current + adjustment), int(self.frame_count / 2))
-        cmds.setAttr('motionTrail1HandleShape.preFrame', result)
-        cmds.setAttr('motionTrail1HandleShape.postFrame', result)
+        self.visible_range.adjust_range(adjustment)
 
     def drag_normalization_dist(self, end):
         start = self.brush.last_drag_point
@@ -190,7 +217,7 @@ class PaintTrajectory:
     def drag_smooth_timeline(self, end):
         start = self.brush.last_drag_point
         current_time = OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit())
-        adjustment = MVector(end.view_point - start.view_point).length() * self.get_lock_axis_delta(end.view_point, start.view_point) * 0.125
+        adjustment = MVector(end.view_point - start.view_point).length() * self.get_lock_axis_delta(end.view_point, start.view_point) * self.scrub_scale
         new_time = current_time + -adjustment
 
         if new_time > self.end_frame:
@@ -220,6 +247,7 @@ class PaintTrajectory:
         to_prev = MVector(prv.world_point - cur.world_point)
         to_next = MVector(nxt.world_point - cur.world_point)
         combined = (to_next + to_prev) * amount
+        # noinspection PyTypeChecker
         cur.set_world_point(MPoint(MVector(cur.world_point) + (combined * cur.feathering)))
         prv.set_world_point(MPoint(MVector(prv.world_point) + (-combined * prv.feathering ** 2)))
         nxt.set_world_point(MPoint(MVector(nxt.world_point) + (-combined * nxt.feathering ** 2)))
@@ -260,7 +288,8 @@ class PaintTrajectory:
             p.set_world_point(MPoint(origin + MVector(vec.normal() * self.normalization_dist)))
 
     def drag_points(self, drag_point):
-        for p in self.motion_trail_points:
+        for i in self.visible_range.list():
+            p = self.motion_trail_points[i]
             if p.feathering > 0:
                 p.set_world_point((p.world_point + (drag_point - self.brush.last_drag_point.world_point) * p.feathering))
 
@@ -289,5 +318,3 @@ class PaintTrajectory:
                              v=OpenMaya.MAngle(final_rot.y).asDegrees(), at='rotateY', time=i)
             cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
                              v=OpenMaya.MAngle(final_rot.z).asDegrees(), at='rotateZ', time=i)
-
-

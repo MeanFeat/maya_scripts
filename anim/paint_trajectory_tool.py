@@ -6,6 +6,8 @@ from maya.api.OpenMayaUI import M3dView
 from anim.paint_trajectory import PTPoint, LockAxis, PaintTrajectory
 from core.debug import fail_exit
 
+tool = None
+
 
 def paint_trajectory_press():
     global tool
@@ -14,6 +16,7 @@ def paint_trajectory_press():
     tool.update_feather_mask(tool.brush.anchor_point.world_point)
     tool.brush.last_drag_point = tool.brush.anchor_point
     tool.brush.modifier = cmds.draggerContext(tool.context, query=True, modifier=True)
+    tool.visible_range.update_range()
 
 
 def paint_trajectory_drag():
