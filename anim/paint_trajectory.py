@@ -1,7 +1,7 @@
 import math
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MQuaternion
+from maya.api.OpenMaya import MEulerRotation, MPoint, MVector, MTime, MSpace, MQuaternion
 from maya.api.OpenMayaUI import M3dView
 from maya.api.MDGContextGuard import MDGContextGuard
 
@@ -121,7 +121,7 @@ class VisibleTimeRange:
 
     def list(self):
         index_list = []
-        for i in range(self.start, self.end+1):
+        for i in range(self.start, self.end + 1):
             index_list.append(i)
         return index_list
 
@@ -182,8 +182,8 @@ class PaintTrajectory:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
             r = self.animated_object.transform_func.rotation()
             o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
-            matrix = self.animated_object.dag_path.inclusiveMatrix()
-        return Basis(t, r, o, matrix)
+            inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
+        return Basis(t, r, o, inclusive_matrix)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -303,14 +303,15 @@ class PaintTrajectory:
         for i in range(len(self.animated_object.basis_frames)):
             p = self.motion_trail_points[i]
             b = self.animated_object.basis_frames[i]
-            origin = b.translation
-            vec = (MVector(p.world_point) - MVector(origin)).normal()
+            vec = (MVector(p.world_point) - MVector(b.translation)).normal()
             direction = b.offset.normal()
-            quat = direction.rotateTo(vec)
+            final_rot = b.rotation
 
-            rot_key = quat.asEulerRotation()
-            axis_correct = MQuaternion().setToXAxis(-rot_key.x)  # TODO spin axis should be arbitrary
-            final_rot = b.rotation + (quat * axis_correct).asEulerRotation()
+            if not vec.isParallel(direction):
+                quat = vec.rotateTo(direction)
+                euler = quat.asEulerRotation()
+                axis_correct = MQuaternion().setToXAxis(-euler.x)  # TODO spin axis should be arbitrary
+                final_rot += (quat * axis_correct).asEulerRotation()
 
             cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
                              v=OpenMaya.MAngle(final_rot.x).asDegrees(), at='rotateX', time=i)
