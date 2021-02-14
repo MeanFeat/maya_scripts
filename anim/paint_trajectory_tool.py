@@ -5,6 +5,7 @@ from maya.api.OpenMayaUI import M3dView
 
 from anim.paint_trajectory import PTPoint, LockAxis, PaintTrajectory
 from core.debug import fail_exit
+from ui.ui_draw_manager import UIDrawLine2D
 
 tool = None
 
@@ -16,7 +17,7 @@ def paint_trajectory_press():
     tool.update_feather_mask(tool.brush.anchor_point.world_point)
     tool.brush.last_drag_point = tool.brush.anchor_point
     tool.brush.modifier = cmds.draggerContext(tool.context, query=True, modifier=True)
-    tool.visible_range.update_range()
+    tool.draw_trajectory()
 
 
 def paint_trajectory_drag():
@@ -62,6 +63,7 @@ def paint_trajectory_drag():
                     tool.brush.adjust_radius(adjust)
                 cmds.headsUpMessage("radius: " + str(tool.brush.inner_radius) + " / " + str(tool.brush.radius), time=1.0)
 
+    tool.draw_trajectory()
     tool.set_actual_trail()
     M3dView.active3dView().refresh()
     tool.brush.last_drag_point = drag_point
@@ -81,10 +83,13 @@ def paint_trajectory_release():
 
 
 def paint_trajectory_setup():
+    tool.build_draw_lines()
     print("tool setup")
 
 
 def paint_trajectory_exit():
+    global tool
+    tool.delete_debug_lines()
     print("tool exited")
 
 

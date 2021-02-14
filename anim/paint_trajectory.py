@@ -1,7 +1,7 @@
 import math
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MEulerRotation, MPoint, MVector, MTime, MSpace, MQuaternion
+from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MQuaternion
 from maya.api.OpenMayaUI import M3dView
 from maya.api.MDGContextGuard import MDGContextGuard
 
@@ -9,6 +9,7 @@ from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world
 from core.basis import Basis
+from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine2D
 
 
 class LockAxis:
@@ -138,8 +139,8 @@ class VisibleTimeRange:
 
     def update_range(self):
         time = cmds.currentTime(query=True)
-        self.start = max(self.scene_min, int(time-self.from_center))
-        self.end = min(self.scene_max, int(time+self.from_center))
+        self.start = max(self.scene_min, int(time - self.from_center))
+        self.end = min(self.scene_max, int(time + self.from_center))
 
 
 class PaintTrajectory:
@@ -149,6 +150,8 @@ class PaintTrajectory:
     normalization_dist = 12
     smooth_strength = 0.125
     scrub_scale = 0.125
+    debug_lines = []
+    trajectory_lines = []
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
@@ -170,6 +173,11 @@ class PaintTrajectory:
         self.create_base_frames()
         self.normalization_dist = MVector(self.animated_object.basis_frames[0].translation
                                           - MVector(self.motion_trail_points[0].world_point)).length()
+
+        path, name = ui_draw_manager_plugin_path()
+        # TODO figure this bullshit out
+        if cmds.pluginInfo('ui_draw_manager.py', q=True, loaded=False):
+            cmds.loadPlugin('D:/GameDev/maya_scripts/ui/ui_draw_manager.py')
 
     def create_base_frames(self):
         for i in range(self.start_frame, self.end_frame + 1):
@@ -226,6 +234,7 @@ class PaintTrajectory:
             new_time += self.frame_count
 
         OpenMayaAnim.MAnimControl.setCurrentTime(MTime(new_time, MTime.uiUnit()))
+        self.visible_range.update_range()
 
     def update_feather_mask(self, position):
         for p in self.motion_trail_points:  # type: PTPoint
@@ -309,9 +318,9 @@ class PaintTrajectory:
 
             if not vec.isParallel(direction):
                 quat = vec.rotateTo(direction)
-                euler = quat.asEulerRotation()
-                axis_correct = MQuaternion().setToXAxis(-euler.x)  # TODO spin axis should be arbitrary
+                axis_correct = MQuaternion().setToXAxis(-quat.asEulerRotation().x)  # TODO spin axis should be arbitrary
                 final_rot += (quat * axis_correct).asEulerRotation()
+                #final_rot += quat.asEulerRotation()
 
             cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
                              v=OpenMaya.MAngle(final_rot.x).asDegrees(), at='rotateX', time=i)
@@ -319,3 +328,47 @@ class PaintTrajectory:
                              v=OpenMaya.MAngle(final_rot.y).asDegrees(), at='rotateY', time=i)
             cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
                              v=OpenMaya.MAngle(final_rot.z).asDegrees(), at='rotateZ', time=i)
+
+    def build_draw_lines(self):
+        if len(self.trajectory_lines) == 0:
+            for b in self.animated_object.basis_frames:
+                draw_node = UIDrawLine2D()
+                self.trajectory_lines.append(draw_node)
+            self.trajectory_lines.append(UIDrawLine2D())
+        '''
+        assert len(self.debug_lines) == len(self.motion_trail_points)
+        toggle = True
+        last_point = self.animated_object.basis_frames[0].translation + (self.animated_object.basis_frames[0].x_vector * self.normalization_dist)
+        for i in range(1, len(self.debug_lines)):
+            basis = self.animated_object.basis_frames[i]
+            end = basis.translation + (basis.x_vector * self.normalization_dist)
+            color = (1, 1, 1, .25) if toggle else (0, 0, 0, .25)
+            self.debug_lines[i].set(last_point, end, color, 1)
+            toggle = not toggle
+            last_point = end
+        '''
+
+    def draw_trajectory(self):
+        for line in self.trajectory_lines:
+            line.set_visible(False)
+
+        visible_list = self.visible_range.list()
+        for i in range(1, len(visible_list)):
+            last_frame = visible_list[i - 1]
+            this_frame = visible_list[i]
+            start = self.motion_trail_points[last_frame].world_point
+            end = self.motion_trail_points[this_frame].world_point
+            color = (.5, .1, .1, 1) if this_frame % 2 == 1 else (.1, .1, .5, 1)
+            self.trajectory_lines[this_frame].set(start, end, color, 5)
+        # t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
+        # inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
+        # x_vector = MVector(inclusive_matrix.getElement(0, 0), inclusive_matrix.getElement(0, 1), inclusive_matrix.getElement(0, 2))
+        # self.trajectory_lines[-1].set(t, t + x_vector * self.normalization_dist, (0, 1, 0, 1), 2)
+
+    def delete_debug_lines(self):
+        for line in self.debug_lines:
+            # TODO set up container for debug instead of deleting individually
+            node = cmds.listRelatives(line.node, parent=True)
+            if node:
+                cmds.delete(node)
+        self.debug_lines = []
