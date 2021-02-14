@@ -309,18 +309,18 @@ class PaintTrajectory:
                 self.brush.lock_axis = LockAxis.kHorizontal if abs(delta.x) > abs(delta.y) else LockAxis.kVertical
 
     def update_animated_frames(self):
-        for i in range(len(self.animated_object.basis_frames)):
+        for i in self.visible_range.list():
             p = self.motion_trail_points[i]
             b = self.animated_object.basis_frames[i]
             vec = (MVector(p.world_point) - MVector(b.translation)).normal()
             direction = b.offset.normal()
             final_rot = b.rotation
 
-            if not vec.isParallel(direction):
-                quat = vec.rotateTo(direction)
-                axis_correct = MQuaternion().setToXAxis(-quat.asEulerRotation().x)  # TODO spin axis should be arbitrary
-                final_rot += (quat * axis_correct).asEulerRotation()
-                #final_rot += quat.asEulerRotation()
+            if not vec.isParallel(direction):  # FIXME this will always be true on frames that have ever changed
+                quat = direction.rotateTo(vec)
+                euler = quat.asEulerRotation()
+                axis_correct = MQuaternion().setToXAxis(-euler.x)  # TODO spin axis should be arbitrary
+                final_rot = b.rotation + (quat * axis_correct).asEulerRotation()
 
             cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
                              v=OpenMaya.MAngle(final_rot.x).asDegrees(), at='rotateX', time=i)
