@@ -319,14 +319,17 @@ class PaintTrajectory:
             vec = (MVector(p.world_point) - MVector(b.translation)).normal()
             direction = b.offset.normal()
             final_rot = b.rotation
-            if not vec.isParallel(direction):  # FIXME this will always be true on frames that have ever changed
+            if not p.feathering > 0:
                 quat = direction.rotateTo(vec)
                 final_rot = (b.rotation * quat)
 
             final_euler = final_rot.asEulerRotation()
-            cmds.setKeyframe(self.animated_object.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(final_euler.x).asDegrees(), at='rotateX', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(final_euler.y).asDegrees(), at='rotateY', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(final_euler.z).asDegrees(), at='rotateZ', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
+                             minimizeRotation=True, v=OpenMaya.MAngle(final_euler.x).asDegrees(), at='rotateX', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
+                             minimizeRotation=True, v=OpenMaya.MAngle(final_euler.y).asDegrees(), at='rotateY', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
+                             minimizeRotation=True, v=OpenMaya.MAngle(final_euler.z).asDegrees(), at='rotateZ', time=i)
 
             p.set_world_point(MPoint(b.translation + direction.rotateBy(final_rot) * self.normalization_dist))
 
@@ -387,9 +390,9 @@ class PaintTrajectory:
         #self.trajectory_lines[-4].set(t, b.x_vector.rotateBy(b.rotation_offset) * self.normalization_dist, (0., 0., 1, 1), 5)
 
     def delete_debug_lines(self):
-        for line in self.debug_lines:
+        for line in self.trajectory_lines:
             # TODO set up container for debug instead of deleting individually
             node = cmds.listRelatives(line.node, parent=True)
             if node:
                 cmds.delete(node)
-        self.debug_lines = []
+        self.trajectory_lines = []
