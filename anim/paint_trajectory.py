@@ -150,6 +150,7 @@ class PaintTrajectory:
     normalization_dist = 12
     smooth_strength = 0.125
     scrub_scale = 0.125
+    scrub_discrete = False
     debug_lines = []
     trajectory_lines = []
 
@@ -188,7 +189,7 @@ class PaintTrajectory:
         # noinspection PyUnusedLocal
         with MDGContextGuard(OpenMaya.MDGContext(MTime(frame, MTime.uiUnit()))) as guard:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
-            r = self.animated_object.transform_func.rotation()
+            r = self.animated_object.transform_func.rotation().asQuaternion()
             o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
             inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
         return Basis(t, r, o, inclusive_matrix)
@@ -232,6 +233,9 @@ class PaintTrajectory:
             new_time -= self.frame_count
         elif new_time < self.start_frame:
             new_time += self.frame_count
+
+        if self.scrub_discrete:
+            new_time = round(new_time)
 
         OpenMayaAnim.MAnimControl.setCurrentTime(MTime(new_time, MTime.uiUnit()))
         self.visible_range.update_range()
@@ -315,19 +319,16 @@ class PaintTrajectory:
             vec = (MVector(p.world_point) - MVector(b.translation)).normal()
             direction = b.offset.normal()
             final_rot = b.rotation
-
             if not vec.isParallel(direction):  # FIXME this will always be true on frames that have ever changed
                 quat = direction.rotateTo(vec)
-                euler = quat.asEulerRotation()
-                axis_correct = MQuaternion().setToXAxis(-euler.x)  # TODO spin axis should be arbitrary
-                final_rot = b.rotation + (quat * axis_correct).asEulerRotation()
+                final_rot = (b.rotation * quat)
 
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
-                             v=OpenMaya.MAngle(final_rot.x).asDegrees(), at='rotateX', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
-                             v=OpenMaya.MAngle(final_rot.y).asDegrees(), at='rotateY', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True,
-                             v=OpenMaya.MAngle(final_rot.z).asDegrees(), at='rotateZ', time=i)
+            final_euler = final_rot.asEulerRotation()
+            cmds.setKeyframe(self.animated_object.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(final_euler.x).asDegrees(), at='rotateX', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(final_euler.y).asDegrees(), at='rotateY', time=i)
+            cmds.setKeyframe(self.animated_object.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(final_euler.z).asDegrees(), at='rotateZ', time=i)
+
+            p.set_world_point(MPoint(b.translation + direction.rotateBy(final_rot) * self.normalization_dist))
 
     def build_draw_lines(self):
         if len(self.trajectory_lines) == 0:
@@ -335,6 +336,10 @@ class PaintTrajectory:
                 draw_node = UIDrawLine2D()
                 self.trajectory_lines.append(draw_node)
             self.trajectory_lines.append(UIDrawLine2D())
+            self.trajectory_lines.append(UIDrawLine2D())
+            #self.trajectory_lines.append(UIDrawLine2D())
+            #self.trajectory_lines.append(UIDrawLine2D())
+            #self.trajectory_lines.append(UIDrawLine2D())
         '''
         assert len(self.debug_lines) == len(self.motion_trail_points)
         toggle = True
@@ -358,12 +363,28 @@ class PaintTrajectory:
             this_frame = visible_list[i]
             start = self.motion_trail_points[last_frame].world_point
             end = self.motion_trail_points[this_frame].world_point
-            color = (.5, .1, .1, 1) if this_frame % 2 == 1 else (.1, .1, .5, 1)
-            self.trajectory_lines[this_frame].set(start, end, color, 5)
-        # t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
-        # inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
-        # x_vector = MVector(inclusive_matrix.getElement(0, 0), inclusive_matrix.getElement(0, 1), inclusive_matrix.getElement(0, 2))
-        # self.trajectory_lines[-1].set(t, t + x_vector * self.normalization_dist, (0, 1, 0, 1), 2)
+            # color = (.5, .1, .1, 1) if this_frame % 2 == 1 else (.1, .1, .5, 1)
+            color = (1, 1, 1, 1) if this_frame % 2 == 1 else (0, 0, 0, 1)
+            self.trajectory_lines[this_frame].set(start, end, color, 2)
+
+        time = cmds.currentTime(query=True)
+        frame = int(time)
+        t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
+        inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
+        x_vector = MVector(inclusive_matrix.getElement(0, 0), inclusive_matrix.getElement(0, 1), inclusive_matrix.getElement(0, 2))
+        y_vector = MVector(inclusive_matrix.getElement(1, 0), inclusive_matrix.getElement(1, 1), inclusive_matrix.getElement(1, 2))
+        z_vector = MVector(inclusive_matrix.getElement(2, 0), inclusive_matrix.getElement(2, 1), inclusive_matrix.getElement(2, 2))
+        self.trajectory_lines[-1].set(t, t + x_vector*self.normalization_dist, (0, 1, 0, 1), 2)
+        time_remainder = time % 1
+        a = MVector(self.motion_trail_points[frame].world_point)
+        b = MVector(self.motion_trail_points[frame+1].world_point)
+        lerp = ((b-a)*time_remainder)+a
+        self.trajectory_lines[-2].set(t, lerp, (0, 0.5, 0.5, .25), 1)
+
+        #b = self.animated_object.basis_frames[frame]
+
+        #self.trajectory_lines[-3].set(t, MVector(1, 0, 0).rotateBy(b.rotation) * self.normalization_dist, (1, 0., 0., 1), 5)
+        #self.trajectory_lines[-4].set(t, b.x_vector.rotateBy(b.rotation_offset) * self.normalization_dist, (0., 0., 1, 1), 5)
 
     def delete_debug_lines(self):
         for line in self.debug_lines:
