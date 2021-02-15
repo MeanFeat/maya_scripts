@@ -1,8 +1,10 @@
-from maya.api.OpenMaya import MEulerRotation, MMatrix, MVector
+from maya.api.OpenMaya import MEulerRotation, MMatrix, MVector, MQuaternion
 
 
 class Basis:
-    def __init__(self, translation, rotation, offset, inclusive_matrix):  # type: (MVector, MEulerRotation, MVector, MMatrix) -> None
+    rotation_offset = MQuaternion()
+
+    def __init__(self, translation, rotation, offset, inclusive_matrix):  # type: (MVector, MQuaternion, MVector, MMatrix) -> None
         self.translation = translation
         self.rotation = rotation
         self.offset = offset
