@@ -5,7 +5,6 @@ from maya.api.OpenMayaUI import M3dView
 
 from anim.paint_trajectory import PTPoint, LockAxis, PaintTrajectory
 from core.debug import fail_exit
-from ui.ui_draw_manager import UIDrawLine
 
 tool = None
 
@@ -40,7 +39,6 @@ def paint_trajectory_drag():
             tool.draw_brush_circles(drag_point.view_point)
 
         if tool.normalize_to_origin:
-            # TODO update after setting rotations?
             tool.update_normalization_dist()
 
         if tool.loop_animation:
