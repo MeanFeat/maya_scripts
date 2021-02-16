@@ -422,7 +422,7 @@ class PaintTrajectory:
         a = MVector(self.motion_trail_points[frame].world_point)
         b = MVector(self.motion_trail_points[frame + 1].world_point)
         lerp = MVector((b - a) * time_remainder) + a
-        self.trajectory_lines[-1].set(t, lerp, (0, 0.5, 0.5, .25), 1)
+        self.trajectory_lines[-1].set(t, lerp, (0, 0.5, 0.5, 1), 2)
 
     def draw_brush_circles(self, pos, color=MColor((0, 0, 0, .3)), is_visible=True):
         self.brush_circles[0].set(pos, self.brush.radius, color, 1, is_visible)

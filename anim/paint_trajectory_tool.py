@@ -47,7 +47,7 @@ def paint_trajectory_drag():
             tool.motion_trail_points[-1].set_world_point(average)
 
     if button == 2:
-        adjust = int(min(max(-2, drag_point.view_point.x - tool.brush.last_drag_point.view_point.x), 2))
+        adjust = int(min(max(-5, drag_point.view_point.x - tool.brush.last_drag_point.view_point.x), 5))
 
         if 'ctrl' in tool.brush.modifier:
             if tool.brush.lock_axis is LockAxis.kVertical:
@@ -79,6 +79,7 @@ def paint_trajectory_release():
         current_time = round(OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit()))
         OpenMayaAnim.MAnimControl.setCurrentTime(MTime(current_time, MTime.uiUnit()))
 
+    tool.draw_trajectory()
     tool.draw_brush_circles(tool.brush.last_drag_point.view_point, MColor((0, 0, 0, 0)), False)
     tool.brush.lock_axis = LockAxis.kNothing
     tool.update_animated_frames()
