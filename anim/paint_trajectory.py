@@ -24,11 +24,12 @@ class PTPoint:
     view_point = MPoint()
     world_point = MPoint()
 
-    def __init__(self, wp=None, f=0):
+    def __init__(self, wp=None, locked=False):
         if wp is None:
             wp = [0, 0, 0]
         self.set_world_point(MPoint(wp[0], wp[1], wp[2]))
-        self.feathering = f
+        self.feathering = 0
+        self.locked = locked
 
     def set_world_point(self, p):  # type :(MPoint) -> None
         self.world_point = p
@@ -98,12 +99,23 @@ class BrushParams:
 
 class AnimatedObject:
     basis_frames = []
+    key_frames = []
 
     def __init__(self, selection_list):
         self.scene_name = selection_list.getSelectionStrings()[0]
         self.dag_path = selection_list.getDagPath(0)
         self.dag_func = OpenMaya.MFnDagNode(self.dag_path)
         self.transform_func = OpenMaya.MFnTransform(self.dag_path)
+        f = 0
+        i = 0
+        original_time = cmds.currentTime(query=True)
+        cmds.currentTime(0, update=False)
+        end_frame = int(cmds.playbackOptions(query=True, max=True))
+        while f < end_frame and i < end_frame:
+            f = cmds.findKeyframe(self.scene_name, attribute='rotate', which='next')
+            self.key_frames.append(int(f))
+            cmds.currentTime(f, update=False)
+        cmds.currentTime(original_time)
 
     def get_rotation_order(self):
         return self.transform_func.rotationOrder()
@@ -254,21 +266,33 @@ class PaintTrajectory:
         for trail_point in cmds.getAttr('motionTrail1.points'):
             p = PTPoint(trail_point)
             self.motion_trail_points.append(p)
+        for i in self.animated_object.key_frames:
+            self.motion_trail_points[i].locked = True
 
     @staticmethod
     def smooth_adjacent_points(prv, cur, nxt, amount):
         """ opperate in-place on point and two neighbours """
-        to_prev = MVector(prv.world_point - cur.world_point)
-        to_next = MVector(nxt.world_point - cur.world_point)
-        combined = (to_next + to_prev) * amount
-        # noinspection PyTypeChecker
-        cur.set_world_point(MPoint(MVector(cur.world_point) + (combined * cur.feathering)))
-        prv.set_world_point(MPoint(MVector(prv.world_point) + (-combined * prv.feathering ** 2)))
-        nxt.set_world_point(MPoint(MVector(nxt.world_point) + (-combined * nxt.feathering ** 2)))
+        if cur.locked:
+            to_prev = MVector(cur.world_point-prv.world_point)
+            to_next = MVector(cur.world_point-nxt.world_point)
+            combined = (to_next + to_prev) * amount
+            if not prv.locked:
+                prv.set_world_point(MPoint(MVector(prv.world_point) + (combined * prv.feathering ** 2)))
+            if not nxt.locked:
+                nxt.set_world_point(MPoint(MVector(nxt.world_point) + (combined * nxt.feathering ** 2)))
+        else:
+            to_prev = MVector(prv.world_point - cur.world_point)
+            to_next = MVector(nxt.world_point - cur.world_point)
+            combined = (to_next + to_prev) * amount
+            cur.set_world_point(MPoint(MVector(cur.world_point) + (combined * cur.feathering)))
+            if not prv.locked:
+                prv.set_world_point(MPoint(MVector(prv.world_point) + (-combined * prv.feathering ** 2)))
+            if not nxt.locked:
+                nxt.set_world_point(MPoint(MVector(nxt.world_point) + (-combined * nxt.feathering ** 2)))
         cur.feathering = 0
 
     def smooth_points(self):
-        for i in range(len(self.motion_trail_points)):
+        for i in self.visible_range.list():
             if self.motion_trail_points[i].feathering > 0:
                 # if we're not looping do nothing with the the first and last frames
                 if i == len(self.motion_trail_points) - 1 and self.loop_animation:
@@ -304,7 +328,7 @@ class PaintTrajectory:
     def drag_points(self, drag_point):
         for i in self.visible_range.list():
             p = self.motion_trail_points[i]
-            if p.feathering > 0:
+            if p.feathering > 0 and not p.locked:
                 p.set_world_point((p.world_point + (drag_point - self.brush.last_drag_point.world_point) * p.feathering))
 
     def update_lock_axis_leash(self, drag_point, leash):
@@ -340,10 +364,6 @@ class PaintTrajectory:
                 draw_node = UIDrawLine()
                 self.trajectory_lines.append(draw_node)
             self.trajectory_lines.append(UIDrawLine())
-            self.trajectory_lines.append(UIDrawLine())
-            # self.trajectory_lines.append(UIDrawLine2D())
-            # self.trajectory_lines.append(UIDrawLine2D())
-            # self.trajectory_lines.append(UIDrawLine2D())
 
         self.brush_circles.append(UIDrawCircle())
         self.brush_circles.append(UIDrawCircle())
@@ -371,28 +391,17 @@ class PaintTrajectory:
             this_frame = visible_list[i]
             start = self.motion_trail_points[last_frame].world_point
             end = self.motion_trail_points[this_frame].world_point
-            # color = (.5, .1, .1, 1) if this_frame % 2 == 1 else (.1, .1, .5, 1)
-            color = (1, 1, 1, 1) if this_frame % 2 == 1 else (0, 0, 0, 1)
+            color = (1, 1, 1, .1) if this_frame % 2 == 1 else (0, 0, 0, .1)
             self.trajectory_lines[this_frame].set(start, end, color, 2)
 
         time = cmds.currentTime(query=True)
         frame = int(time)
         t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
-        inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
-        x_vector = MVector(inclusive_matrix.getElement(0, 0), inclusive_matrix.getElement(0, 1), inclusive_matrix.getElement(0, 2))
-        y_vector = MVector(inclusive_matrix.getElement(1, 0), inclusive_matrix.getElement(1, 1), inclusive_matrix.getElement(1, 2))
-        z_vector = MVector(inclusive_matrix.getElement(2, 0), inclusive_matrix.getElement(2, 1), inclusive_matrix.getElement(2, 2))
-        self.trajectory_lines[-1].set(t, t + x_vector * self.normalization_dist, (0, 1, 0, .5), 1)
         time_remainder = time % 1
         a = MVector(self.motion_trail_points[frame].world_point)
         b = MVector(self.motion_trail_points[frame + 1].world_point)
-        lerp = ((b - a) * time_remainder) + a
-        self.trajectory_lines[-2].set(t, lerp, (0, 0.5, 0.5, .25), 1)
-
-        # b = self.animated_object.basis_frames[frame]
-
-        # self.trajectory_lines[-3].set(t, MVector(1, 0, 0).rotateBy(b.rotation) * self.normalization_dist, (1, 0., 0., 1), 5)
-        # self.trajectory_lines[-4].set(t, b.x_vector.rotateBy(b.rotation_offset) * self.normalization_dist, (0., 0., 1, 1), 5)
+        lerp = MVector((b - a) * time_remainder) + a
+        self.trajectory_lines[-1].set(t, lerp, (0, 0.5, 0.5, .25), 1)
 
     def draw_brush_circles(self, pos, color=MColor((0, 0, 0, .3)), is_visible=True):
         self.brush_circles[0].set(pos, self.brush.radius, color, 1, is_visible)
