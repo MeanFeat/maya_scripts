@@ -1,11 +1,11 @@
 from maya import cmds
 from maya.api import OpenMayaAnim, OpenMaya
-from maya.api.OpenMaya import MPoint, MVector, MTime
+from maya.api.OpenMaya import MPoint, MVector, MTime, MColor
 from maya.api.OpenMayaUI import M3dView
 
 from anim.paint_trajectory import PTPoint, LockAxis, PaintTrajectory
 from core.debug import fail_exit
-from ui.ui_draw_manager import UIDrawLine2D
+from ui.ui_draw_manager import UIDrawLine
 
 tool = None
 
@@ -34,8 +34,10 @@ def paint_trajectory_drag():
         elif 'shift' in tool.brush.modifier:
             tool.update_feather_mask(drag_point.world_point)
             tool.smooth_points()
+            tool.draw_brush_circles(drag_point.view_point)
         else:
             tool.drag_points(drag_point.world_point)
+            tool.draw_brush_circles(drag_point.view_point)
 
         if tool.normalize_to_origin:
             # TODO update after setting rotations?
@@ -47,7 +49,7 @@ def paint_trajectory_drag():
             tool.motion_trail_points[-1].set_world_point(average)
 
     if button == 2:
-        adjust = int(min(max(-1, drag_point.view_point.x - tool.brush.last_drag_point.view_point.x), 1))
+        adjust = int(min(max(-2, drag_point.view_point.x - tool.brush.last_drag_point.view_point.x), 2))
 
         if 'ctrl' in tool.brush.modifier:
             if tool.brush.lock_axis is LockAxis.kVertical:
@@ -61,6 +63,7 @@ def paint_trajectory_drag():
                     tool.brush.adjust_inner_radius(adjust)
                 else:
                     tool.brush.adjust_radius(adjust)
+                tool.draw_brush_circles(tool.brush.anchor_point.view_point, MColor((1, 1, 1, .5)), True)
                 cmds.headsUpMessage("radius: " + str(tool.brush.inner_radius) + " / " + str(tool.brush.radius), time=1.0)
 
     tool.draw_trajectory()
@@ -78,12 +81,13 @@ def paint_trajectory_release():
         current_time = round(OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit()))
         OpenMayaAnim.MAnimControl.setCurrentTime(MTime(current_time, MTime.uiUnit()))
 
+    tool.draw_brush_circles(tool.brush.last_drag_point.view_point, MColor((0, 0, 0, 0)), False)
     tool.brush.lock_axis = LockAxis.kNothing
     tool.update_animated_frames()
 
 
 def paint_trajectory_setup():
-    tool.build_draw_lines()
+    tool.build_draw_shapes()
     print("tool setup")
 
 

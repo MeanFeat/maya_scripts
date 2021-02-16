@@ -1,7 +1,7 @@
 import math
 from maya import cmds, mel
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MQuaternion
+from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MQuaternion, MColor
 from maya.api.OpenMayaUI import M3dView
 from maya.api.MDGContextGuard import MDGContextGuard
 
@@ -9,7 +9,7 @@ from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world
 from core.basis import Basis
-from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine2D
+from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle
 
 
 class LockAxis:
@@ -153,6 +153,7 @@ class PaintTrajectory:
     scrub_discrete = False
     debug_lines = []
     trajectory_lines = []
+    brush_circles = []
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
@@ -333,16 +334,20 @@ class PaintTrajectory:
 
             p.set_world_point(MPoint(b.translation + direction.rotateBy(final_rot) * self.normalization_dist))
 
-    def build_draw_lines(self):
+    def build_draw_shapes(self):
         if len(self.trajectory_lines) == 0:
             for b in self.animated_object.basis_frames:
-                draw_node = UIDrawLine2D()
+                draw_node = UIDrawLine()
                 self.trajectory_lines.append(draw_node)
-            self.trajectory_lines.append(UIDrawLine2D())
-            self.trajectory_lines.append(UIDrawLine2D())
-            #self.trajectory_lines.append(UIDrawLine2D())
-            #self.trajectory_lines.append(UIDrawLine2D())
-            #self.trajectory_lines.append(UIDrawLine2D())
+            self.trajectory_lines.append(UIDrawLine())
+            self.trajectory_lines.append(UIDrawLine())
+            # self.trajectory_lines.append(UIDrawLine2D())
+            # self.trajectory_lines.append(UIDrawLine2D())
+            # self.trajectory_lines.append(UIDrawLine2D())
+
+        self.brush_circles.append(UIDrawCircle())
+        self.brush_circles.append(UIDrawCircle())
+
         '''
         assert len(self.debug_lines) == len(self.motion_trail_points)
         toggle = True
@@ -377,17 +382,21 @@ class PaintTrajectory:
         x_vector = MVector(inclusive_matrix.getElement(0, 0), inclusive_matrix.getElement(0, 1), inclusive_matrix.getElement(0, 2))
         y_vector = MVector(inclusive_matrix.getElement(1, 0), inclusive_matrix.getElement(1, 1), inclusive_matrix.getElement(1, 2))
         z_vector = MVector(inclusive_matrix.getElement(2, 0), inclusive_matrix.getElement(2, 1), inclusive_matrix.getElement(2, 2))
-        self.trajectory_lines[-1].set(t, t + x_vector*self.normalization_dist, (0, 1, 0, 1), 2)
+        self.trajectory_lines[-1].set(t, t + x_vector * self.normalization_dist, (0, 1, 0, .5), 1)
         time_remainder = time % 1
         a = MVector(self.motion_trail_points[frame].world_point)
-        b = MVector(self.motion_trail_points[frame+1].world_point)
-        lerp = ((b-a)*time_remainder)+a
+        b = MVector(self.motion_trail_points[frame + 1].world_point)
+        lerp = ((b - a) * time_remainder) + a
         self.trajectory_lines[-2].set(t, lerp, (0, 0.5, 0.5, .25), 1)
 
-        #b = self.animated_object.basis_frames[frame]
+        # b = self.animated_object.basis_frames[frame]
 
-        #self.trajectory_lines[-3].set(t, MVector(1, 0, 0).rotateBy(b.rotation) * self.normalization_dist, (1, 0., 0., 1), 5)
-        #self.trajectory_lines[-4].set(t, b.x_vector.rotateBy(b.rotation_offset) * self.normalization_dist, (0., 0., 1, 1), 5)
+        # self.trajectory_lines[-3].set(t, MVector(1, 0, 0).rotateBy(b.rotation) * self.normalization_dist, (1, 0., 0., 1), 5)
+        # self.trajectory_lines[-4].set(t, b.x_vector.rotateBy(b.rotation_offset) * self.normalization_dist, (0., 0., 1, 1), 5)
+
+    def draw_brush_circles(self, pos, color=MColor((0, 0, 0, .3)), is_visible=True):
+        self.brush_circles[0].set(pos, self.brush.radius, color, 1, is_visible)
+        self.brush_circles[1].set(pos, self.brush.inner_radius, color, 1, is_visible)
 
     def delete_debug_lines(self):
         for line in self.trajectory_lines:
@@ -396,3 +405,6 @@ class PaintTrajectory:
             if node:
                 cmds.delete(node)
         self.trajectory_lines = []
+
+        cmds.delete(self.brush_circles[0].parent)
+        cmds.delete(self.brush_circles[1].parent)

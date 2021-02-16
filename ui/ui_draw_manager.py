@@ -23,8 +23,11 @@ class UIDraw(OpenMayaUI.MPxLocatorNode):
     drawDbClassification = "drawdb/geometry/uiDrawManager"
     drawRegistrantId = "uiDrawManagerPlugin"
 
-    start = MPoint(0, 0, 0)
-    end = MPoint(0, 0, 0)
+    shape = -1
+    view_position = MPoint(0, 0, 0)
+    radius = 1
+    line_start = MPoint(0, 0, 0)
+    line_end = MPoint(0, 0, 0)
     color = (1., 1., 1., 1.)
     line_width = 1
 
@@ -43,10 +46,21 @@ class UIDraw(OpenMayaUI.MPxLocatorNode):
         need a new node for each shape we draw.
         """
         numeric_attribute = OpenMaya.MFnNumericAttribute()
-        UIDraw.start = numeric_attribute.create("world_start", "s0", OpenMaya.MFnNumericData.k3Double)
-        OpenMaya.MPxNode.addAttribute(UIDraw.start)
-        UIDraw.end = numeric_attribute.create("world_end", "s1", OpenMaya.MFnNumericData.k3Double)
-        OpenMaya.MPxNode.addAttribute(UIDraw.end)
+
+        UIDraw.shape = numeric_attribute.create("shape", "shp", OpenMaya.MFnNumericData.kInt)
+        OpenMaya.MPxNode.addAttribute(UIDraw.shape)
+
+        UIDraw.view_position = numeric_attribute.create("view_position", "vp", OpenMaya.MFnNumericData.k3Double)
+        OpenMaya.MPxNode.addAttribute(UIDraw.view_position)
+
+        UIDraw.radius = numeric_attribute.create("radius", "r", OpenMaya.MFnNumericData.kInt)
+        OpenMaya.MPxNode.addAttribute(UIDraw.radius)
+
+        UIDraw.line_start = numeric_attribute.create("line_start", "ls0", OpenMaya.MFnNumericData.k3Double)
+        OpenMaya.MPxNode.addAttribute(UIDraw.line_start)
+        UIDraw.line_end = numeric_attribute.create("line_end", "le1", OpenMaya.MFnNumericData.k3Double)
+        OpenMaya.MPxNode.addAttribute(UIDraw.line_end)
+
         UIDraw.color = numeric_attribute.create("color", "clr", OpenMaya.MFnNumericData.k4Double)
         OpenMaya.MPxNode.addAttribute(UIDraw.color)
         UIDraw.line_width = numeric_attribute.create("line_width", "lw", OpenMaya.MFnNumericData.kInt)
@@ -54,9 +68,10 @@ class UIDraw(OpenMayaUI.MPxLocatorNode):
 
 
 class UIDrawShape(object):
+    kInvalid = -1
     kLine = 0
     kCircle = 1
-    type = None
+    shape = kInvalid
     color = (1, 1, 1, 1)
     width = 1
 
@@ -67,16 +82,22 @@ class UIDrawShape(object):
     def set_color(self, color):
         self.color = color
         for i in range(4):
-            cmds.setAttr(self.node + '.color.color'+str(i), self.color[i])
+            cmds.setAttr(self.node + '.color.color' + str(i), self.color[i])
 
     def set_line_width(self, width):
         self.width = width
         cmds.setAttr(self.node + '.line_width', self.width)
 
+    def set_visible(self, is_visible):
+        cmds.setAttr(self.parent + '.visibility', int(is_visible))
+
 
 class UIDrawData(OpenMaya.MUserData):
-    start = MPoint()
-    end = MPoint()
+    shape = UIDrawShape.kInvalid
+    view_position = MPoint(0, 0, 0)
+    radius = 1
+    line_start = MPoint()
+    line_end = MPoint()
     color = MColor((1, 1, 1, 1))
     line_width = 1
 
@@ -84,36 +105,46 @@ class UIDrawData(OpenMaya.MUserData):
         OpenMaya.MUserData.__init__(self, False)
 
 
-class UIDrawLine2D(UIDrawShape):
-    type = UIDrawShape.kLine
+class UIDrawLine(UIDrawShape):
 
     def __init__(self):
-        super(UIDrawLine2D, self).__init__()
+        super(UIDrawLine, self).__init__()
+        self.shape = UIDrawShape.kLine
 
     def set(self, start, end, color=None, width=None, visible=True):
-        cmds.setAttr(self.node + '.world_start.world_start0', start.x)
-        cmds.setAttr(self.node + '.world_start.world_start1', start.y)
-        cmds.setAttr(self.node + '.world_start.world_start2', start.z)
-        cmds.setAttr(self.node + '.world_end.world_end0', end.x)
-        cmds.setAttr(self.node + '.world_end.world_end1', end.y)
-        cmds.setAttr(self.node + '.world_end.world_end2', end.z)
+        cmds.setAttr(self.node + '.shape', self.shape)
+        cmds.setAttr(self.node + '.line_start.line_start0', start.x)
+        cmds.setAttr(self.node + '.line_start.line_start1', start.y)
+        cmds.setAttr(self.node + '.line_start.line_start2', start.z)
+        cmds.setAttr(self.node + '.line_end.line_end0', end.x)
+        cmds.setAttr(self.node + '.line_end.line_end1', end.y)
+        cmds.setAttr(self.node + '.line_end.line_end2', end.z)
         self.set_visible(visible)
         if color is not None:
             self.set_color(color)
         if width is not None:
             self.set_line_width(width)
 
-    def set_visible(self, is_visible):
-        cmds.setAttr(self.parent + '.visibility', int(is_visible))
-
 
 class UIDrawCircle(UIDrawShape):
-    type = UIDrawShape.kCircle
+    position = MPoint()
+    radius = 1
 
-    def __init__(self, position, radius):
+    def __init__(self):
         super(UIDrawCircle, self).__init__()
-        self.position = position
-        self.radius = radius
+        self.shape = UIDrawShape.kCircle
+
+    def set(self, position, radius, color=None, width=None, visible=True):
+        cmds.setAttr(self.node + '.shape', self.shape)
+        cmds.setAttr(self.node + '.view_position.view_position0', position.x)
+        cmds.setAttr(self.node + '.view_position.view_position1', position.y)
+        cmds.setAttr(self.node + '.view_position.view_position2', position.z)
+        cmds.setAttr(self.node + '.radius', radius)
+        self.set_visible(visible)
+        if color is not None:
+            self.set_color(color)
+        if width is not None:
+            self.set_line_width(width)
 
 
 # noinspection PyMethodOverriding
@@ -143,15 +174,8 @@ class UIDrawOverride(OpenMayaRender.MPxDrawOverride):
         if ui_draw_manager_node.isNull():
             return
 
-        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.start)
-        o = plug.asMObject()
-        numeric_data = OpenMaya.MFnNumericData(o)
-        data.start = OpenMaya.MPoint(numeric_data.getData())
-
-        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.end)
-        o = plug.asMObject()
-        numeric_data = OpenMaya.MFnNumericData(o)
-        data.end = OpenMaya.MPoint(numeric_data.getData())
+        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.shape)
+        data.shape = plug.asInt()
 
         plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.color)
         o = plug.asMObject()
@@ -161,6 +185,26 @@ class UIDrawOverride(OpenMayaRender.MPxDrawOverride):
         plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.line_width)
         data.line_width = plug.asInt()
 
+        # circle
+        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.view_position)
+        o = plug.asMObject()
+        numeric_data = OpenMaya.MFnNumericData(o)
+        data.view_position = OpenMaya.MPoint(numeric_data.getData())
+
+        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.radius)
+        data.radius = plug.asInt()
+
+        # line
+        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.line_start)
+        o = plug.asMObject()
+        numeric_data = OpenMaya.MFnNumericData(o)
+        data.line_start = OpenMaya.MPoint(numeric_data.getData())
+
+        plug = OpenMaya.MPlug(ui_draw_manager_node, UIDraw.line_end)
+        o = plug.asMObject()
+        numeric_data = OpenMaya.MFnNumericData(o)
+        data.line_end = OpenMaya.MPoint(numeric_data.getData())
+
         return data
 
     def hasUIDrawables(self, **kwargs):
@@ -169,7 +213,10 @@ class UIDrawOverride(OpenMayaRender.MPxDrawOverride):
     def addUIDrawables(self, object_path, draw_manager, frame_context, data):
         draw_manager.setColor(data.color)
         draw_manager.setLineWidth(data.line_width)
-        draw_manager.line2d(world_to_view(data.start), world_to_view(data.end))
+        if data.shape == UIDrawShape.kLine:
+            draw_manager.line2d(world_to_view(data.line_start), world_to_view(data.line_end))
+        elif data.shape == UIDrawShape.kCircle:
+            draw_manager.circle2d(data.view_position, data.radius)
 
         draw_manager.endDrawable()
 
