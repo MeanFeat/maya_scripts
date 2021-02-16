@@ -1,4 +1,4 @@
-from maya.api.OpenMaya import MEulerRotation, MMatrix, MVector, MQuaternion
+from maya.api.OpenMaya import MMatrix, MVector, MQuaternion
 
 
 class Basis:
