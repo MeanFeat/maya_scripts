@@ -68,6 +68,15 @@ class UIDraw(OpenMayaUI.MPxLocatorNode):
         OpenMaya.MPxNode.addAttribute(UIDraw.line_width)
 
 
+def get_ui_draw_group():
+    group_name = 'ui_draw_group'
+    existing = cmds.ls(group_name)
+    if not existing:
+        return cmds.group(em=True, name=group_name)
+    else:
+        return existing
+
+
 class UIDrawShape(object):
     kInvalid = -1
     kCircle = 0
@@ -79,7 +88,11 @@ class UIDrawShape(object):
 
     def __init__(self):
         self.node = cmds.createNode('uiDrawManager')
+        draw_group = get_ui_draw_group()
+        original_parent = cmds.listRelatives(self.node, parent=True)[0]
+        cmds.parent(self.node, draw_group, shape=True)
         self.parent = cmds.listRelatives(self.node, parent=True)[0]
+        cmds.delete(original_parent)
 
     def set_color(self, color):
         self.color = color

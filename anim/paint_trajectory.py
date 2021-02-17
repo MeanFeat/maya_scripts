@@ -9,7 +9,7 @@ from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world
 from core.basis import Basis
-from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint
+from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint, get_ui_draw_group
 
 
 class LockAxis:
@@ -163,15 +163,18 @@ class PaintTrajectory:
     motion_trail_points = None
     loop_animation = True
     should_lock_keyframes = False
-    normalize_to_origin = True
     normalization_dist = 12
+    normalize_to_origin = True
     smooth_strength = 0.125
+
+    # timeline
     scrub_scale = 0.125
     scrub_discrete = False
-    debug_lines = []
-    trajectory_lines = []
+
+    # drawables
     brush_circles = []
     keyframe_points = []
+    trajectory_lines = []
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
@@ -424,21 +427,12 @@ class PaintTrajectory:
         lerp = MVector((b - a) * time_remainder) + a
         self.trajectory_lines[-1].set(t, lerp, (0, 0.5, 0.5, 1), 2)
 
-    def draw_brush_circles(self, pos, color=MColor((0, 0, 0, .3)), is_visible=True):
+    def draw_brush_circles(self, pos, color=MColor((1, 1, 1, .1)), is_visible=True):
         self.brush_circles[0].set(pos, self.brush.radius, color, 1, is_visible)
         self.brush_circles[1].set(pos, self.brush.inner_radius, color, 1, is_visible)
 
-    def delete_debug_lines(self):
-        for line in self.trajectory_lines:
-            # TODO set up container for debug instead of deleting individually
-            cmds.delete(line.parent)
+    @staticmethod
+    def delete_debug_lines():
+        cmds.delete(get_ui_draw_group())
 
-        cmds.delete(self.brush_circles[0].parent)
-        cmds.delete(self.brush_circles[1].parent)
 
-        for k in self.keyframe_points:
-            cmds.delete(k.parent)
-
-        self.trajectory_lines = []
-        self.brush_circles = []
-        self.keyframe_points = []
