@@ -15,3 +15,14 @@ def key_range(sel):
         cmds.setKeyframe(sel)
     cmds.currentTime(original_time)
 
+
+def share_keys(sel):
+    next_frame, end_frame = scene_util.get_timeline_selection()
+    print(end_frame)
+    while next_frame < end_frame:
+        cmds.currentTime(next_frame, update=True)
+        cmds.setKeyframe(sel)
+        prev_frame = next_frame
+        next_frame = int(cmds.findKeyframe(timeSlider=True, which='next'))
+        if prev_frame > next_frame:
+            break
