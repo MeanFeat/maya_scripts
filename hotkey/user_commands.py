@@ -18,7 +18,6 @@ def key_range(sel):
 
 def share_keys(sel):
     next_frame, end_frame = scene_util.get_timeline_selection()
-    print(end_frame)
     while next_frame < end_frame:
         cmds.currentTime(next_frame, update=True)
         cmds.setKeyframe(sel)
