@@ -79,7 +79,7 @@ def duplicate_under_selection():
 
 def select_layer_node(layer):
     cmds.select(layer, replace=True, noExpand=True)
-    print cmds.ls(selection=True)
+    print(cmds.ls(selection=True))
 
 
 def get_selected_layer_node(layer):

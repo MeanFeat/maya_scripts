@@ -23,5 +23,5 @@ def share_keys(sel):
         cmds.setKeyframe(sel)
         prev_frame = next_frame
         next_frame = int(cmds.findKeyframe(timeSlider=True, which='next'))
-        if prev_frame > next_frame:
+        if prev_frame > next_frame or next_frame == prev_frame:
             break
