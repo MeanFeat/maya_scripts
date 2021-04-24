@@ -14,8 +14,7 @@ def ui_draw_manager_plugin_path():
     return path, name
 
 
-# noinspection PyPep8Naming
-def maya_useNewAPI(): # TODO Is this necessary?
+def maya_useNewAPI():  # required for MObject
     pass
 
 

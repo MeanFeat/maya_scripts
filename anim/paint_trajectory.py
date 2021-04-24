@@ -2,7 +2,7 @@ import math
 from maya import cmds, mel
 
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace,  MEulerRotation
+from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MEulerRotation
 from maya.OpenMayaUI import M3dView
 
 from maya.api.MDGContextGuard import MDGContextGuard
@@ -106,7 +106,6 @@ class AnimatedObject:
     def __init__(self, selection_list):
         self.scene_name = selection_list.getSelectionStrings()[0]
         self.dag_path = selection_list.getDagPath(0)
-        self.dag_func = OpenMaya.MFnDagNode(self.dag_path)
         self.transform_func = OpenMaya.MFnTransform(self.dag_path)
 
         # TODO find a nicer way to get the frames
@@ -122,9 +121,6 @@ class AnimatedObject:
             cmds.currentTime(f, update=False)
             i += 1
         cmds.currentTime(original_time)
-
-    def get_rotation_order(self):
-        return self.transform_func.rotationOrder()
 
 
 class VisibleTimeRange:
@@ -169,7 +165,6 @@ class PaintTrajectory:
     normalize_to_origin = True
     smooth_strength = 0.25
 
-    should_update_animated = False
     modified_list = []
 
     # timeline
@@ -180,7 +175,6 @@ class PaintTrajectory:
     brush_circles = []
     keyframe_points = []
     trajectory_lines = []
-    debug_lines = []
 
     def __init__(self, selection_list, context='paint_trajectory_ctx'):
         self.context = context
@@ -218,12 +212,10 @@ class PaintTrajectory:
         # noinspection PyUnusedLocal
         with MDGContextGuard(OpenMaya.MDGContext(MTime(frame, MTime.uiUnit()))) as guard:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
-            r = self.animated_object.transform_func.rotation().asQuaternion()
             o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
-            exclusive_matrix = self.animated_object.dag_path.exclusiveMatrix()
             inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
             inverse_matrix = self.animated_object.dag_path.exclusiveMatrixInverse()
-        return Basis(t, r, o, exclusive_matrix, inclusive_matrix, inverse_matrix)
+        return Basis(t, o, inclusive_matrix, inverse_matrix)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -273,7 +265,8 @@ class PaintTrajectory:
 
     def update_feather_mask(self, position):
         self.modified_list = []
-        for i, p in enumerate(self.motion_trail_points):  # type: PTPoint
+        for i in self.visible_range.list():
+            p = self.motion_trail_points[i]
             result, dist = p.within_dist(position, self.brush.radius)
             if result:
                 if i not in self.modified_list:
@@ -385,13 +378,12 @@ class PaintTrajectory:
                 cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=i)
 
     def build_draw_shapes(self):
-        '''
         for k in self.animated_object.key_frames:
-            pos = self.motion_trail_points[k].world_point # TODO fix for keys outside timeline
-            point = UIDrawPoint()
-            point.set(pos, 6, (1.0, 1.0, 1.0, 0.25), False)
-            self.keyframe_points.append(point)
-        '''
+            if k < len(self.motion_trail_points):
+                pos = self.motion_trail_points[k].world_point  # TODO fix for keys outside timeline
+                point = UIDrawPoint()
+                point.set(pos, 6, (1.0, 1.0, 1.0, 0.25), False)
+                self.keyframe_points.append(point)
 
         self.brush_circles.append(UIDrawCircle())
         self.brush_circles.append(UIDrawCircle())
@@ -402,18 +394,6 @@ class PaintTrajectory:
                 draw_node = UIDrawLine()
                 self.trajectory_lines.append(draw_node)
             self.trajectory_lines.append(UIDrawLine())
-        """
-        assert len(self.debug_lines) == len(self.motion_trail_points)
-        toggle = True
-        last_point = self.animated_object.basis_frames[0].translation + (self.animated_object.basis_frames[0].x_vector * self.normalization_dist)
-        for i in range(1, len(self.debug_lines)):
-            basis = self.animated_object.basis_frames[i]
-            end = basis.translation + (basis.x_vector * self.normalization_dist)
-            color = (1.0, 1.0, 1.0, 0.25) if toggle else (0.0, 0.0, 0.0, 0.25)
-            self.debug_lines[i].set(last_point, end, color, 1)
-            toggle = not toggle
-            last_point = end
-        """
 
     def draw_trajectory(self):
         for line in self.trajectory_lines:
@@ -434,6 +414,7 @@ class PaintTrajectory:
                 index = self.animated_object.key_frames.index(this_frame)
                 self.keyframe_points[index].set_visible(True)
 
+        # draw time cursor
         time = cmds.currentTime(query=True)
         frame = int(time)
         t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
@@ -444,10 +425,10 @@ class PaintTrajectory:
         self.trajectory_lines[-1].set(t, lerp, (0.0, 0.5, 0.5, 1), 2)
 
     def draw_brush_circles(self, pos, color=(1.0, 1.0, 1.0, 0.1), is_visible=True):
-        assert(len(self.brush_circles) > 1)
+        assert (len(self.brush_circles) > 1)
         self.brush_circles[0].set(pos, self.brush.radius, color, 1, is_visible)
         self.brush_circles[1].set(pos, self.brush.inner_radius, color, 1, is_visible)
 
     @staticmethod
-    def delete_debug_lines():
+    def delete_ui_draw_group():
         cmds.delete(get_ui_draw_group())

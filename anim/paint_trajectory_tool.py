@@ -96,7 +96,7 @@ def paint_trajectory_setup():
 
 def paint_trajectory_exit():
     global tool
-    tool.delete_debug_lines()
+    tool.delete_ui_draw_group()
     print("tool exited")
 
 
