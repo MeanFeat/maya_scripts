@@ -2,7 +2,7 @@ import math
 from maya import cmds, mel
 
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MMatrix
+from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace,  MEulerRotation
 from maya.OpenMayaUI import M3dView
 
 from maya.api.MDGContextGuard import MDGContextGuard
@@ -10,7 +10,7 @@ from maya.api.MDGContextGuard import MDGContextGuard
 from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world, get_world_up
-from core.basis import Basis, get_matrix_rotation
+from core.basis import Basis, build_rotation_matrix
 from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint, get_ui_draw_group
 
 
@@ -220,9 +220,10 @@ class PaintTrajectory:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
             r = self.animated_object.transform_func.rotation().asQuaternion()
             o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
+            exclusive_matrix = self.animated_object.dag_path.exclusiveMatrix()
             inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
             inverse_matrix = self.animated_object.dag_path.exclusiveMatrixInverse()
-        return Basis(t, r, o, inclusive_matrix, inverse_matrix)
+        return Basis(t, r, o, exclusive_matrix, inclusive_matrix, inverse_matrix)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -367,8 +368,18 @@ class PaintTrajectory:
             p = self.motion_trail_points[i]
             b = self.animated_object.basis_frames[i]
             target = (MVector(p.world_point) - MVector(b.translation)).normal()
-            u = b.inverse_matrix * get_world_up()
-            final_euler = get_matrix_rotation(target, u, b.inverse_matrix)
+
+            up = b.inverse_matrix * get_world_up()
+            origin_matrix = build_rotation_matrix(b.offset, up)
+            destination_matrix = build_rotation_matrix(target, up)
+
+            # TODO deal with scaled matrices
+            inverse_origin = origin_matrix.inverse()
+            localized_animated_matrix = b.inclusive_matrix * inverse_origin
+            localized_rotation_matrix = destination_matrix * inverse_origin
+            rotated_matrix = (localized_animated_matrix * localized_rotation_matrix) * origin_matrix
+            rotated_matrix *= b.inverse_matrix
+            final_euler = MEulerRotation.decompose(rotated_matrix, MEulerRotation.kXYZ)
 
             for e, a in zip((final_euler.x, final_euler.y, final_euler.z), ("rotateX", "rotateY", "rotateZ")):
                 cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=i)
