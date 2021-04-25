@@ -9,6 +9,35 @@ class Basis:
         self.inverse_matrix = inverse_matrix
 
 
+def set_matrix_translation(matrix, translation):
+    matrix.setElement(3, 0, translation.x)
+    matrix.setElement(3, 1, translation.y)
+    matrix.setElement(3, 2, translation.z)
+
+
+def get_matrix_x(matrix):
+    return MVector(matrix.getElement(0, 0), matrix.getElement(0, 1), matrix.getElement(0, 2))
+
+
+def get_matrix_y(matrix):
+    return MVector(matrix.getElement(1, 0), matrix.getElement(1, 1), matrix.getElement(1, 2))
+
+
+def get_matrix_z(matrix):
+    return MVector(matrix.getElement(2, 0), matrix.getElement(2, 1), matrix.getElement(2, 2))
+
+
+def get_matrix_translation(matrix):
+    return MVector(matrix.getElement(3, 0), matrix.getElement(3, 1), matrix.getElement(3, 2))
+
+
+def get_matrix_components(matrix):
+    x = get_matrix_x(matrix)
+    y = get_matrix_y(matrix)
+    z = get_matrix_z(matrix)
+    return x, y, z, get_matrix_translation(matrix)
+
+
 def build_rotation_matrix(target, up):  # type: (MVector, MVector) -> MMatrix
     cross = target ^ up
     final = cross ^ target

@@ -10,7 +10,7 @@ from maya.api.MDGContextGuard import MDGContextGuard
 from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world, get_world_up
-from core.basis import Basis, build_rotation_matrix
+from core.basis import Basis, build_rotation_matrix, get_matrix_components, set_matrix_translation
 from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint, get_ui_draw_group
 
 
@@ -366,12 +366,16 @@ class PaintTrajectory:
             origin_matrix = build_rotation_matrix(b.offset, up)
             destination_matrix = build_rotation_matrix(target, up)
 
+            # draw_matrix(origin_matrix, 800.0, 1.0)
+            # draw_matrix(destination_matrix, 800.0, 1.0)
+
             # TODO deal with scaled matrices
             inverse_origin = origin_matrix.inverse()
             localized_animated_matrix = b.inclusive_matrix * inverse_origin
             localized_rotation_matrix = destination_matrix * inverse_origin
             rotated_matrix = (localized_animated_matrix * localized_rotation_matrix) * origin_matrix
             rotated_matrix *= b.inverse_matrix
+
             final_euler = MEulerRotation.decompose(rotated_matrix, MEulerRotation.kXYZ)
 
             for e, a in zip((final_euler.x, final_euler.y, final_euler.z), ("rotateX", "rotateY", "rotateZ")):
@@ -432,3 +436,13 @@ class PaintTrajectory:
     @staticmethod
     def delete_ui_draw_group():
         cmds.delete(get_ui_draw_group())
+
+
+def draw_matrix(matrix, scale=1.0, alpha=1.0):
+    x_dir, y_dir, z_dir, pos = get_matrix_components(matrix)
+    x_line = UIDrawLine()
+    y_line = UIDrawLine()
+    z_line = UIDrawLine()
+    x_line.set(pos, pos + x_dir*scale, (1., 0., 0., alpha), 1, True)
+    y_line.set(pos, pos + y_dir*scale, (0., 1., 0., alpha), 1, True)
+    z_line.set(pos, pos + z_dir*scale, (0., 0., 1., alpha), 1, True)
