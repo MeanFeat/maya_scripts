@@ -10,7 +10,7 @@ from maya.api.MDGContextGuard import MDGContextGuard
 from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
 from core.scene_util import world_to_view, view_to_world, get_world_up
-from core.basis import Basis, build_rotation_matrix, get_matrix_components, set_matrix_translation
+from core.basis import Basis, build_rotation_matrix, get_matrix_components
 from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint, get_ui_draw_group
 
 
@@ -214,8 +214,8 @@ class PaintTrajectory:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
             o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
             inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
-            inverse_matrix = self.animated_object.dag_path.exclusiveMatrixInverse()
-        return Basis(t, o, inclusive_matrix, inverse_matrix)
+            inverse_exclusive_matrix = self.animated_object.dag_path.exclusiveMatrixInverse()
+        return Basis(t, o, inclusive_matrix, inverse_exclusive_matrix)
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -362,24 +362,26 @@ class PaintTrajectory:
             b = self.animated_object.basis_frames[i]
             target = (MVector(p.world_point) - MVector(b.translation)).normal()
 
-            up = b.inverse_matrix * get_world_up()
+            up = get_world_up()
             origin_matrix = build_rotation_matrix(b.offset, up)
             destination_matrix = build_rotation_matrix(target, up)
 
-            # draw_matrix(origin_matrix, 800.0, 1.0)
-            # draw_matrix(destination_matrix, 800.0, 1.0)
-
-            # TODO deal with scaled matrices
+            '''
+            if i == cmds.currentTime(q=True):
+                draw_matrix(b.inclusive_matrix, 1.0, 1.0)
+                draw_matrix(b.inverse_exclusive_matrix, 1.0, 1.0)
+            '''
+            
+            # TODO problems occur with pivot offsets
             inverse_origin = origin_matrix.inverse()
             localized_animated_matrix = b.inclusive_matrix * inverse_origin
             localized_rotation_matrix = destination_matrix * inverse_origin
-            rotated_matrix = (localized_animated_matrix * localized_rotation_matrix) * origin_matrix
-            rotated_matrix *= b.inverse_matrix
+            rotated_matrix = localized_animated_matrix * localized_rotation_matrix * origin_matrix * b.inverse_exclusive_matrix
 
             final_euler = MEulerRotation.decompose(rotated_matrix, MEulerRotation.kXYZ)
 
             for e, a in zip((final_euler.x, final_euler.y, final_euler.z), ("rotateX", "rotateY", "rotateZ")):
-                cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=True, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=i)
+                cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=False, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=i)
 
     def build_draw_shapes(self):
         for k in self.animated_object.key_frames:

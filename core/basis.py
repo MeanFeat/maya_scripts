@@ -2,11 +2,12 @@ from maya.api.OpenMaya import MMatrix, MVector
 
 
 class Basis:
-    def __init__(self, transliation, offset, inclusive_matrix, inverse_matrix):  # type: (MVector, MVector, MMatrix, MMatrix) -> None
+    def __init__(self, transliation, offset, inclusive_matrix, inverse_exclusive_matrix):  # type: (MVector, MVector, MMatrix, MMatrix) -> None
         self.translation = transliation
         self.offset = offset
         self.inclusive_matrix = inclusive_matrix
-        self.inverse_matrix = inverse_matrix
+        set_matrix_translation(self.inclusive_matrix, self.translation)
+        self.inverse_exclusive_matrix = inverse_exclusive_matrix
 
 
 def set_matrix_translation(matrix, translation):
