@@ -6,7 +6,6 @@ class Basis:
         self.translation = transliation
         self.offset = offset
         self.inclusive_matrix = inclusive_matrix
-        set_matrix_translation(self.inclusive_matrix, self.translation)
         self.inverse_exclusive_matrix = inverse_exclusive_matrix
 
 
