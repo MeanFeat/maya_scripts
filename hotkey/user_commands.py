@@ -3,8 +3,32 @@ from core import scene_util
 
 
 def frame_selected_timeline():
-    rng = cmds.timeControl(scene_util.get_playback_slider(), q=True, rangeArray=True)
-    cmds.playbackOptions(min=rng[0], max=rng[1])
+    time_range = scene_util.get_timeline_selection()
+    cmds.playbackOptions(min=time_range[0], max=(time_range[1]-1))
+
+
+def frame_past_timeline():
+    time_range = scene_util.get_timeline_selection()
+    cmds.playbackOptions(min=time_range[0])
+
+
+def frame_future_timeline():
+    time_range = scene_util.get_timeline_selection()
+    cmds.playbackOptions(max=(time_range[1]-1))
+
+
+def trim_past_timeline():
+    time_range = scene_util.get_timeline_selection()
+    sel = cmds.ls(selection=True)
+    start_time = int(cmds.playbackOptions(minTime=True, query=True))
+    cmds.cutKey(sel, clear=True, time=(start_time, time_range[0]-1))
+
+
+def trim_future_timeline():
+    time_range = scene_util.get_timeline_selection()
+    sel = cmds.ls(selection=True)
+    end_time = int(cmds.playbackOptions(maxTime=True, query=True))
+    cmds.cutKey(sel, clear=True, time=(time_range[1], end_time))
 
 
 def key_range(sel):

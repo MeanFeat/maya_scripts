@@ -334,7 +334,7 @@ def export_range_window():
     cmds.showWindow(window)
 
 
-def create_progress_window(size):
+def create_progress_window(size): # TODO move to scene utils
     win = cmds.window(title='Exporting Layers', toolbox=True)
     cmds.columnLayout()
     progress_window = ProgressTuple(win, cmds.progressBar(maxValue=size, width=400))
