@@ -79,7 +79,6 @@ def duplicate_under_selection():
 
 def select_layer_node(layer):
     cmds.select(layer, replace=True, noExpand=True)
-    print cmds.ls(selection=True)
 
 
 def get_selected_layer_node(layer):
@@ -334,7 +333,7 @@ def export_range_window():
     cmds.showWindow(window)
 
 
-def create_progress_window(size): # TODO move to scene utils
+def create_progress_window(size):  # TODO move to scene utils
     win = cmds.window(title='Exporting Layers', toolbox=True)
     cmds.columnLayout()
     progress_window = ProgressTuple(win, cmds.progressBar(maxValue=size, width=400))
