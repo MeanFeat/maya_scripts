@@ -10,6 +10,7 @@ global tool
 
 def paint_trajectory_press():
     global tool
+    tool.should_update_animated = False
     tool.get_motion_trail_from_scene()  # update from the scene in case we undo
     tool.brush.anchor_point = PTPoint(cmds.draggerContext(tool.context, query=True, anchorPoint=True))
     tool.update_feather_mask(tool.motion_trail_points, tool.brush.anchor_point.world_point)
@@ -30,22 +31,25 @@ def paint_trajectory_drag():
                 tool.update_animated_frames()
             if tool.brush.lock_axis is LockAxis.kVertical:
                 tool.drag_smooth_timeline(drag_point)
-
-        elif 'shift' in tool.brush.modifier:
-            tool.update_feather_mask(tool.motion_trail_points,drag_point.world_point)
-            tool.smooth_points()
-            tool.draw_brush_circles(drag_point.view_point)
         else:
-            tool.drag_points(drag_point.world_point)
             tool.draw_brush_circles(drag_point.view_point)
+            tool.should_update_animated = True
 
-        if tool.normalize_to_origin:
-            tool.update_normalization_dist()
+            if 'shift' in tool.brush.modifier:
+                tool.update_feather_mask(tool.motion_trail_points, drag_point.world_point)
+                tool.smooth_points()
+            else:
+                tool.drag_points(drag_point.world_point)
 
-        if tool.loop_animation:
-            average = MPoint((MVector(tool.motion_trail_points[0].world_point) + MVector(tool.motion_trail_points[-1].world_point)) * 0.5)
-            tool.motion_trail_points[0].set_world_point(average)
-            tool.motion_trail_points[-1].set_world_point(average)
+            if tool.loop_animation:
+                average = MPoint((MVector(tool.motion_trail_points[0].world_point) + MVector(tool.motion_trail_points[-1].world_point)) * 0.5)
+                tool.motion_trail_points[0].set_world_point(average)
+                tool.motion_trail_points[-1].set_world_point(average)
+
+            if tool.normalize_to_origin:
+                tool.update_normalization_dist()
+
+        tool.draw_trajectory()
 
     if button == 2:
         adjust = int(min(max(-5, drag_point.view_point.x - tool.brush.last_drag_point.view_point.x), 5))
@@ -56,16 +60,16 @@ def paint_trajectory_drag():
                 tool.update_normalization_dist()
             elif tool.brush.lock_axis is LockAxis.kHorizontal:
                 tool.drag_trail_frame_range(drag_point)
+            tool.draw_trajectory()
         else:
             if tool.brush.lock_axis is LockAxis.kHorizontal:
                 if 'shift' in tool.brush.modifier:
                     tool.brush.adjust_inner_radius(adjust)
                 else:
                     tool.brush.adjust_radius(adjust)
-                tool.draw_brush_circles(tool.brush.anchor_point.view_point, MColor((1, 1, 1, .5)), True)
+                tool.draw_brush_circles(tool.brush.anchor_point.view_point, MColor((1.0, 1.0, 1.0, 0.5)), True)
                 cmds.headsUpMessage("radius: " + str(tool.brush.inner_radius) + " / " + str(tool.brush.radius), time=1.0)
 
-    tool.draw_trajectory()
     tool.set_actual_trail()
     M3dView.active3dView().refresh()
     tool.brush.last_drag_point = drag_point
@@ -76,15 +80,15 @@ def paint_trajectory_release():
     global tool
     if tool.brush.anchor_point is tool.brush.last_drag_point:
         print("{m} click it".format(m=tool.brush.modifier))
-
     if 'ctrl' in tool.brush.modifier and tool.brush.lock_axis is LockAxis.kVertical:
         current_time = round(OpenMayaAnim.MAnimControl.currentTime().asUnits(MTime.uiUnit()))
         OpenMayaAnim.MAnimControl.setCurrentTime(MTime(current_time, MTime.uiUnit()))
-
+    tool.modified_list = []
     tool.draw_trajectory()
-    tool.draw_brush_circles(tool.brush.last_drag_point.view_point, MColor((0, 0, 0, 0)), False)
+    tool.draw_brush_circles(tool.brush.last_drag_point.view_point, MColor((0.0, 0.0, 0.0, 0.0)), False)
     tool.brush.lock_axis = LockAxis.kNothing
-    tool.update_animated_frames()
+    if tool.should_update_animated:
+        tool.update_animated_frames()
 
 
 def paint_trajectory_setup():

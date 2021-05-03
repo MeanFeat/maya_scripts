@@ -15,7 +15,7 @@ def ui_draw_manager_plugin_path():
 
 
 # noinspection PyPep8Naming
-def maya_useNewAPI():
+def maya_useNewAPI():  # required for MObject
     pass
 
 
@@ -46,6 +46,9 @@ class UIDraw(OpenMayaUI.MPxLocatorNode):
         OpenMaya api 2.0 doesn't allow array attributes yet, so we will
         need a new node for each shape we draw.
         """
+
+        # TODO Look into MFnPointArrayData
+
         numeric_attribute = OpenMaya.MFnNumericAttribute()
 
         UIDraw.shape = numeric_attribute.create("shape", "shp", OpenMaya.MFnNumericData.kInt)

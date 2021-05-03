@@ -1,13 +1,17 @@
 import math
 from maya import cmds, mel
+
 from maya.api import OpenMaya, OpenMayaAnim
-from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MColor
-from maya.api.OpenMayaUI import M3dView
+from maya.api.OpenMaya import MPoint, MVector, MTime, MSpace, MEulerRotation
+from maya.OpenMayaUI import M3dView
+
 from maya.api.MDGContextGuard import MDGContextGuard
+
+from core.scene_util import get_world_up
 from tools.paint_system import *
 from core.debug import fail_exit
 from anim.anim_layer import AnimLayer
-from core.basis import Basis
+from core.basis import Basis, set_matrix_translation, build_rotation_matrix
 from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint, get_ui_draw_group
 
 
@@ -18,7 +22,6 @@ class AnimatedObject:
     def __init__(self, selection_list):
         self.scene_name = selection_list.getSelectionStrings()[0]
         self.dag_path = selection_list.getDagPath(0)
-        self.dag_func = OpenMaya.MFnDagNode(self.dag_path)
         self.transform_func = OpenMaya.MFnTransform(self.dag_path)
 
         # TODO find a nicer way to get the frames
@@ -34,9 +37,6 @@ class AnimatedObject:
             cmds.currentTime(f, update=False)
             i += 1
         cmds.currentTime(original_time)
-
-    def get_rotation_order(self):
-        return self.transform_func.rotationOrder()
 
 
 class VisibleTimeRange:
@@ -79,8 +79,9 @@ class PaintTrajectory(PaintSystem):
     should_lock_keyframes = False
     normalization_dist = 12
     normalize_to_origin = True
-    smooth_strength = 0.125
+    smooth_strength = 0.25
 
+    modified_list = []
     # drawables
     keyframe_points = []
     trajectory_lines = []
@@ -114,10 +115,12 @@ class PaintTrajectory(PaintSystem):
         # noinspection PyUnusedLocal
         with MDGContextGuard(OpenMaya.MDGContext(MTime(frame, MTime.uiUnit()))) as guard:
             t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
-            r = self.animated_object.transform_func.rotation().asQuaternion()
             o = MVector(self.motion_trail_points[frame].world_point - t).normalize()
             inclusive_matrix = self.animated_object.dag_path.inclusiveMatrix()
-        return Basis(t, r, o, inclusive_matrix)
+            set_matrix_translation(inclusive_matrix, t)
+            exclusive_matrix = self.animated_object.dag_path.exclusiveMatrix()
+            set_matrix_translation(exclusive_matrix, t - self.animated_object.transform_func.translation(MSpace.kObject))
+        return Basis(t, o, inclusive_matrix, exclusive_matrix.inverse())
 
     def adjust_normalization_dist(self, value):
         self.normalization_dist += value
@@ -151,7 +154,8 @@ class PaintTrajectory(PaintSystem):
             p = PTPoint(trail_point)
             self.motion_trail_points.append(p)
         for i in self.animated_object.key_frames:
-            self.motion_trail_points[i].is_locked = self.should_lock_keyframes
+            if i < len(self.motion_trail_points):
+                self.motion_trail_points[i].is_locked = self.should_lock_keyframes
 
     # noinspection PyTypeChecker
     @staticmethod
@@ -205,40 +209,39 @@ class PaintTrajectory(PaintSystem):
         mel.eval(cmd)
 
     def update_normalization_dist(self):
-        # TODO update keyframe visuals
+        # TODO update locked keyframe visuals
         for i, p in enumerate(self.motion_trail_points):
             origin = self.animated_object.basis_frames[i].translation
             vec = (MVector(p.world_point) - MVector(origin)).normal()
             p.set_world_point(MPoint(origin + MVector(vec.normal() * self.normalization_dist)))
 
     def drag_points(self, drag_point):
+        modified = []
         for i in self.visible_range.list():
             p = self.motion_trail_points[i]
             if p.feathering > 0 and not p.is_locked:
                 p.set_world_point((p.world_point + (drag_point - self.brush.last_drag_point.world_point) * p.feathering))
-        self.is_animated_dirty = True
+        return modified
 
     def update_animated_frames(self):
         for i in self.visible_range.list():
             p = self.motion_trail_points[i]
             b = self.animated_object.basis_frames[i]
-            vec = (MVector(p.world_point) - MVector(b.translation)).normal()
-            direction = b.offset.normal()
-            final_rot = b.rotation
-            if not p.feathering > 0:
-                quat = direction.rotateTo(vec)
-                final_rot = (b.rotation * quat)
+            target = (MVector(p.world_point) - MVector(b.translation)).normal()
 
-            final_euler = final_rot.asEulerRotation()
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             minimizeRotation=True, v=OpenMaya.MAngle(final_euler.x).asDegrees(), at='rotateX', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             minimizeRotation=True, v=OpenMaya.MAngle(final_euler.y).asDegrees(), at='rotateY', time=i)
-            cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name,
-                             minimizeRotation=True, v=OpenMaya.MAngle(final_euler.z).asDegrees(), at='rotateZ', time=i)
+            up = get_world_up()
+            origin_matrix = build_rotation_matrix(b.offset, up)
+            destination_matrix = build_rotation_matrix(target, up)
 
-            p.set_world_point(MPoint(b.translation + direction.rotateBy(final_rot) * self.normalization_dist))
-        self.is_animated_dirty = False
+            inverse_origin = origin_matrix.inverse()
+            localized_animated_matrix = b.inclusive_matrix * inverse_origin
+            localized_rotation_matrix = destination_matrix * inverse_origin
+            rotated_matrix = localized_animated_matrix * localized_rotation_matrix * origin_matrix * b.inverse_exclusive_matrix
+
+            final_euler = MEulerRotation.decompose(rotated_matrix, MEulerRotation.kXYZ)  # TODO use animated object's rotation order
+
+            for e, a in zip((final_euler.x, final_euler.y, final_euler.z), ("rotateX", "rotateY", "rotateZ")):
+                cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=False, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=i)
 
     def build_draw_shapes(self):
         super().build_draw_shapes()
@@ -281,12 +284,13 @@ class PaintTrajectory(PaintSystem):
             this_frame = visible_list[i]
             start = self.motion_trail_points[last_frame].world_point
             end = self.motion_trail_points[this_frame].world_point
-            color = (1, 1, 1, .1) if this_frame % 2 == 1 else (0, 0, 0, .1)
-            self.trajectory_lines[this_frame].set(start, end, color, 2)
+            color = (1., 1., 1., 1.) if this_frame % 2 == 1 else (0., 0., 0., 1.)
+            self.trajectory_lines[this_frame].set(start, end, color, 3)
             if self.motion_trail_points[this_frame].is_locked:
                 index = self.animated_object.key_frames.index(this_frame)
                 self.keyframe_points[index].set_visible(True)
 
+        # draw time cursor
         time = cmds.currentTime(query=True)
         frame = int(time)
         t = self.animated_object.transform_func.rotatePivot(MSpace.kWorld)
@@ -294,7 +298,7 @@ class PaintTrajectory(PaintSystem):
         a = MVector(self.motion_trail_points[frame].world_point)
         b = MVector(self.motion_trail_points[frame + 1].world_point)
         lerp = MVector((b - a) * time_remainder) + a
-        self.trajectory_lines[-1].set(t, lerp, (0, 0.5, 0.5, 1), 2)
+        self.trajectory_lines[-1].set(t, lerp, (0.0, 0.5, 0.5, 1), 2)
 
 
 
