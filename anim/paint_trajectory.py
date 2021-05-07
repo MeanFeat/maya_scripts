@@ -145,13 +145,13 @@ class PaintTrajectory(PaintSystem):
         cmds.headsUpMessage("distance: " + str(int(self.normalization_dist)), time=1.0)
 
     def drag_smooth_timeline(self, end):
-        super().drag_smooth_timeline(end)
+        super(self).drag_smooth_timeline(end)
         self.visible_range.update_range()
 
     def get_motion_trail_from_scene(self):
         self.motion_trail_points = []
         for trail_point in cmds.getAttr('motionTrail1.points'):
-            p = PTPoint(trail_point)
+            p = PaintPoint(trail_point)
             self.motion_trail_points.append(p)
         for i in self.animated_object.key_frames:
             if i < len(self.motion_trail_points):
@@ -203,7 +203,7 @@ class PaintTrajectory(PaintSystem):
 
     def set_actual_trail(self):
         coordinates = ''
-        for p in self.motion_trail_points:  # type: PTPoint
+        for p in self.motion_trail_points:  # type: PaintPoint
             coordinates += str(p.world_point.x) + ' ' + str(p.world_point.y) + ' ' + str(p.world_point.z) + ' ' + str(p.world_point.w) + ' '
         cmd = 'setAttr motionTrail1.points -type pointArray ' + str(len(self.motion_trail_points)) + ' ' + coordinates + ' ;'
         mel.eval(cmd)
@@ -244,7 +244,7 @@ class PaintTrajectory(PaintSystem):
                 cmds.setKeyframe(self.animated_object.scene_name, animLayer=self.anim_layer.scene_name, minimizeRotation=False, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=i)
 
     def build_draw_shapes(self):
-        super().build_draw_shapes()
+        super(PaintTrajectory, self).build_draw_shapes()
         if len(self.trajectory_lines) == 0:
             # noinspection PyUnusedLocal
             for b in self.animated_object.basis_frames:

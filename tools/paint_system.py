@@ -2,7 +2,7 @@ import math
 import maya.cmds as cmds
 from maya.api import OpenMayaAnim
 from core.scene_util import world_to_view, view_to_world
-from maya.api.OpenMaya import MPoint, MVector, MSpace, MTime, MColor
+from maya.api.OpenMaya import MPoint, MVector, MSpace, MTime, MColor, MGlobal
 from ui.ui_draw_manager import ui_draw_manager_plugin_path, UIDrawLine, UIDrawCircle, UIDrawPoint, get_ui_draw_group
 
 
@@ -14,7 +14,7 @@ class LockAxis:
     def __init__(self): pass
 
 
-class PTPoint:
+class PaintPoint:
     view_point = MPoint()
     world_point = MPoint()
 
@@ -55,8 +55,8 @@ class BrushParams:
         self.modifier = ''
         self.radius = 50
         self.inner_radius = 10
-        self.anchor_point = PTPoint()
-        self.last_drag_point = PTPoint()
+        self.anchor_point = PaintPoint()
+        self.last_drag_point = PaintPoint()
         self.string = ''
 
     def adjust_radius(self, value):
@@ -137,7 +137,7 @@ class PaintSystem:
         OpenMayaAnim.MAnimControl.setCurrentTime(MTime(new_time, MTime.uiUnit()))
 
     def update_feather_mask(self, points, position):
-        for p in points:  # type: PTPoint
+        for p in points:  # type: PaintPoint
             result, dist = p.within_dist(position, self.brush.radius)
             if result:
                 p.feathering = self.brush.get_feathering(dist)
@@ -161,4 +161,3 @@ class PaintSystem:
     @staticmethod
     def delete_ui_draw_group():
         cmds.delete(get_ui_draw_group())
-

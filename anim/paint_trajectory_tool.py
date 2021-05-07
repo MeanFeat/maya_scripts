@@ -2,7 +2,7 @@ from maya import cmds
 from maya.api import OpenMayaAnim, OpenMaya
 from maya.api.OpenMaya import MPoint, MVector, MTime, MColor
 from maya.api.OpenMayaUI import M3dView
-from anim.paint_trajectory import PTPoint, LockAxis, PaintTrajectory
+from anim.paint_trajectory import PaintPoint, LockAxis, PaintTrajectory
 from core.debug import fail_exit
 
 global tool
@@ -12,7 +12,7 @@ def paint_trajectory_press():
     global tool
     tool.should_update_animated = False
     tool.get_motion_trail_from_scene()  # update from the scene in case we undo
-    tool.brush.anchor_point = PTPoint(cmds.draggerContext(tool.context, query=True, anchorPoint=True))
+    tool.brush.anchor_point = PaintPoint(cmds.draggerContext(tool.context, query=True, anchorPoint=True))
     tool.update_feather_mask(tool.motion_trail_points, tool.brush.anchor_point.world_point)
     tool.brush.last_drag_point = tool.brush.anchor_point
     tool.brush.modifier = cmds.draggerContext(tool.context, query=True, modifier=True)
@@ -21,7 +21,7 @@ def paint_trajectory_press():
 
 def paint_trajectory_drag():
     global tool
-    drag_point = PTPoint(cmds.draggerContext(tool.context, query=True, dragPoint=True))
+    drag_point = PaintPoint(cmds.draggerContext(tool.context, query=True, dragPoint=True))
     button = cmds.draggerContext(tool.context, query=True, button=True)
 
     tool.update_lock_axis_leash(drag_point, 5)
