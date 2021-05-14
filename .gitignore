@@ -5,4 +5,6 @@ ptvsd/
 
 *.pyc
 
+.vscode/*.*
+
 scratch_pad*.py
