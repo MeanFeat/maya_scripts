@@ -15,7 +15,7 @@ def ui_draw_manager_plugin_path():
 
 
 # noinspection PyPep8Naming
-def maya_useNewAPI():
+def maya_useNewAPI():  # required for MObject
     pass
 
 
@@ -46,6 +46,9 @@ class UIDraw(OpenMayaUI.MPxLocatorNode):
         OpenMaya api 2.0 doesn't allow array attributes yet, so we will
         need a new node for each shape we draw.
         """
+
+        # TODO Look into MFnPointArrayData
+
         numeric_attribute = OpenMaya.MFnNumericAttribute()
 
         UIDraw.shape = numeric_attribute.create("shape", "shp", OpenMaya.MFnNumericData.kInt)
@@ -136,12 +139,12 @@ class UIDrawCircle(UIDrawShape):
         super(UIDrawCircle, self).__init__()
         self.shape = UIDrawShape.kCircle
 
-    def set(self, position, size, color=None, width=None, visible=True):
+    def set(self, position, radius, color=None, width=None, visible=True):
         cmds.setAttr(self.node + '.shape', self.shape)
         cmds.setAttr(self.node + '.view_position.view_position0', position.x)
         cmds.setAttr(self.node + '.view_position.view_position1', position.y)
         cmds.setAttr(self.node + '.view_position.view_position2', position.z)
-        cmds.setAttr(self.node + '.size', size)
+        cmds.setAttr(self.node + '.size', radius)
         self.set_visible(visible)
         if color is not None:
             self.set_color(color)
@@ -157,12 +160,12 @@ class UIDrawPoint(UIDrawShape):
         super(UIDrawPoint, self).__init__()
         self.shape = UIDrawShape.kPoint
 
-    def set(self, start, size, color=None, visible=True):
+    def set(self, position, radius, color=(1,1,1,1), visible=True):
         cmds.setAttr(self.node + '.shape', self.shape)
-        cmds.setAttr(self.node + '.world_position.world_position0', start.x)
-        cmds.setAttr(self.node + '.world_position.world_position1', start.y)
-        cmds.setAttr(self.node + '.world_position.world_position2', start.z)
-        cmds.setAttr(self.node + '.size', size)
+        cmds.setAttr(self.node + '.world_position.world_position0', position.x)
+        cmds.setAttr(self.node + '.world_position.world_position1', position.y)
+        cmds.setAttr(self.node + '.world_position.world_position2', position.z)
+        cmds.setAttr(self.node + '.size', radius)
         self.set_visible(visible)
         if color is not None:
             self.set_color(color)

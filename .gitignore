@@ -8,3 +8,5 @@ ptvsd/
 .vscode/*.*
 
 scratch_pad*.py
+
+.vscode/
