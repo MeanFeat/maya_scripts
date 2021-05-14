@@ -1,7 +1,7 @@
 from maya import cmds, mel
 from maya.api import OpenMaya
 
-file_name = 'D:/Temp/RADIANT_TEMP/input/03_scientist_trigger.arcvis'
+file_name = 'D:/Temp/RADIANT_TEMP/input/example.arcvis'
 
 attribute_list = ['Open',
                   'Explosive',
