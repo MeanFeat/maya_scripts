@@ -9,17 +9,17 @@ file_name = "D:\\gamedev\\python\\output\\example.txt"
 
 
 def create_progress_window(size):
-    win = cmds.window(title='Squared Error', toolbox=True)
+    win = cmds.window(title='Importing Facial Data', toolbox=True)
     cmds.columnLayout()
-    progress_window = ProgressTuple(win, cmds.progressBar(maxValue=size, width=400))
-    cmds.showWindow(progress_window.window)
-    return progress_window
+    progress = ProgressTuple(win, cmds.progressBar(maxValue=size, width=400))
+    cmds.showWindow(progress.window)
+    return progress
 
 
 input_file = open(file_name, "r")
 input_lines = input_file.readlines()
 
-prog = create_progress_window(len(input_lines))
+progress_window = create_progress_window(len(input_lines))
 
 locators = []
 for i in range(68):
@@ -40,7 +40,7 @@ for line in input_lines:
         x = float(keys[i + 0])
         y = -float(keys[i + 1])
         z = float(keys[i + 2])
-        average_vector += MVector(x,y,z)
+        average_vector += MVector(x, y, z)
         vector = MVector(x, y, z)
         raw_vectors.append(vector)
         i += 3
@@ -56,5 +56,5 @@ for line in input_lines:
         cmds.setKeyframe(locators[i], attribute='translateX', t=[current_frame, current_frame], v=v.x)
         cmds.setKeyframe(locators[i], attribute='translateY', t=[current_frame, current_frame], v=v.y)
         cmds.setKeyframe(locators[i], attribute='translateZ', t=[current_frame, current_frame], v=v.z)
-    cmds.progressBar(prog.control, edit=True, step=1)
-cmds.deleteUI(prog.window)
+    cmds.progressBar(progress_window.control, edit=True, step=1)
+cmds.deleteUI(progress_window.window)
