@@ -1,13 +1,14 @@
 import collections
 
 import maya.cmds as cmds
+from maya.api import OpenMaya
 from maya.api.OpenMaya import MVector, MMatrix, MEulerRotation, MAngle
 
 from core.basis import build_plane_normal, build_matrix
 
 ProgressTuple = collections.namedtuple('ProgressWindow', ['window', 'control'])
 
-file_name = "D:\\gamedev\\python\\output\\example1.txt"
+file_name = "D:\\gamedev\\python\\output\\example.txt"
 point_count = 68
 
 
@@ -51,6 +52,7 @@ def rotate_vectors(vector_list):
         result.append((rotation_matrix * nv))
     return result, rotation_matrix
 
+#rotation_root = cmds.spaceLocator(name='rotation_root')
 
 current_frame = 0
 for line in input_lines:
@@ -80,6 +82,8 @@ for line in input_lines:
         cmds.setKeyframe(locators[index], attribute='translateX', t=[current_frame, current_frame], v=value.x)
         cmds.setKeyframe(locators[index], attribute='translateY', t=[current_frame, current_frame], v=value.y)
         cmds.setKeyframe(locators[index], attribute='translateZ', t=[current_frame, current_frame], v=value.z)
+    #for e, a in zip((euler_rotation.x, euler_rotation.y, euler_rotation.z), ("rotateX", "rotateY", "rotateZ")):
+    #    cmds.setKeyframe(rotation_root, minimizeRotation=False, v=OpenMaya.MAngle(e).asDegrees(), at=a, time=current_frame)
 
     cmds.progressBar(progress_window.control, edit=True, step=1)
 cmds.deleteUI(progress_window.window)
