@@ -58,8 +58,9 @@ class Organism:
                 self.genes[gene_index] = parents[0].genes[gene_index] if random.random() > 0.5 else parents[1].genes[gene_index]
                 if random.random() > mutation_chance:
                     mutation_sign = 1 if random.random() > 0.5 else -1
-                    self.genes[gene_index] = self.genes[gene_index] + ((mutation_rate * mutation_sign) * random.random())  #math.tanh(self.genes[gene_index] + ((mutation_rate * mutation_sign) * random.random()))
-                    #self.genes[gene_index] = max(self.genes[gene_index], 0.0)
+                    self.genes[gene_index] = self.genes[gene_index] + ((mutation_rate * mutation_sign) * random.random())
+                    # self.genes[gene_index] = math.tanh(self.genes[gene_index] + ((mutation_rate * mutation_sign) * random.random()))
+                    # self.genes[gene_index] = max(self.genes[gene_index], 0.0)
 
     def set_fitness(self, fit):
         self.fitness = fit
@@ -74,11 +75,10 @@ def get_object_world_position(item):
     return result
 
 
-def get_sum_error(source_vectors, target_list, fittest=None, current=None):
+def get_sum_error(source_vectors, target_vectors, fittest=None, current=None):
     sum_error = 0  # TODO: include error from previous frame
-    for source, target in zip(source_vectors, target_list):
-        target_point = get_object_world_position(target)
-        delta = source - target_point
+    for source, target in zip(source_vectors, target_vectors):
+        delta = source - target
         sum_error += delta.x ** 2
         sum_error += delta.y ** 2
         sum_error += delta.z ** 2
@@ -103,61 +103,80 @@ def build_organism_from_scene():
     return result
 
 
-cmds.select('capture_points', replace=True)
-capture_points = cmds.ls(selection=True)
-capture_points.sort()
-cmds.select('target_points', replace=True)
-target_points = cmds.ls(selection=True)
-target_points.sort()
+def get_morph_deltas(setup, morphs, genes):
+    result = []
+    for null in range(len(setup)):
+        vec = MVector()
+        result.append(vec)
+    for gene_index, g in enumerate(genes):
+        for morph_index, m in enumerate(morphs[gene_index]):
+            result[morph_index] += m * g
+    for setup_index, s in enumerate(setup):
+        result[setup_index] += s
+    return result
 
 
-time_range = scene_util.get_timeline_selection()
-progress_window = create_progress_window(epoch_count * ((int(time_range[1]) - int(time_range[0])) / frame_step_size) * population_count)
-most_fit_cached = Organism()
-for time in range(int(time_range[0]), int(time_range[1])):
-    if time % frame_step_size == 0:
-        cmds.currentTime(time)
+def do_it():
+    cmds.select('capture_points', replace=True)
+    capture_points = cmds.ls(selection=True)
+    capture_points.sort()
+    cmds.select('target_points', replace=True)
+    target_points = cmds.ls(selection=True)
+    target_points.sort()
 
-        capture_vectors = []
-        for c in capture_points:
-            capture_vectors.append(get_object_world_position(c))
+    setup_organism = Organism(zero=True)
+    set_scene_to_organism(setup_organism)
+    setup_vectors = []
+    for point in target_points:
+        setup_vectors.append(get_object_world_position(point))
 
-        most_fit = build_organism_from_scene()
-        set_scene_to_organism(most_fit)
-        most_fit.set_fitness(get_sum_error(capture_vectors, target_points))
+    morph_deltas = []
+    for morph_index, morph_target in enumerate(get_morph_targets()):
+        morph_organism = Organism(zero=True)
+        morph_organism.genes[morph_index] = 1
+        set_scene_to_organism(morph_organism)
+        deltas = []
+        for point_index, point in enumerate(target_points):
+            deltas.append(get_object_world_position(point) - setup_vectors[point_index])
+        morph_deltas.append(deltas)
 
-        population = []
-        for i in range(population_count):
-            new_organism = Organism()
-            organism = Organism([most_fit, new_organism])
-            population.append(organism)
+    time_range = scene_util.get_timeline_selection()
+    progress_window = create_progress_window(epoch_count * ((int(time_range[1]) - int(time_range[0])) / frame_step_size) * population_count)
+    most_fit_cached = Organism()
+    for time in range(int(time_range[0]), int(time_range[1])):
+        if time % frame_step_size == 0:
+            cmds.currentTime(time)
 
-        for epoch in range(epoch_count):
-            for organism in population:
-                set_scene_to_organism(organism)
-                organism.set_fitness(get_sum_error(capture_vectors, target_points, most_fit_cached, organism))
-                cmds.progressBar(progress_window.control, edit=True, step=1)
-                if organism.fitness < most_fit.fitness:
-                    most_fit = organism
-                    set_scene_to_organism(most_fit)
+            capture_vectors = []  # TODO: MDGContext guard and cache all frames outside of loop
+            for c in capture_points:
+                capture_vectors.append(get_object_world_position(c))
 
-            '''
-            population.sort()
-            new_population = []
-            for new_index in range(population_count):
-                if new_index < champion_count:
+            most_fit = build_organism_from_scene()  # TODO: cache and maintain
+            target_vectors = get_morph_deltas(setup_vectors, morph_deltas, most_fit.genes)
+            most_fit.set_fitness(get_sum_error(capture_vectors, target_vectors))
+
+            population = []
+            for population_index in range(population_count):
+                new_organism = Organism()
+                organism = Organism([most_fit, new_organism])
+                population.append(organism)
+
+            for epoch in range(epoch_count):
+                for organism in population:
+                    target_vectors = get_morph_deltas(setup_vectors, morph_deltas, organism.genes)
+                    organism.set_fitness(get_sum_error(capture_vectors, target_vectors, most_fit_cached, organism))
+                    cmds.progressBar(progress_window.control, edit=True, step=1)
+                    if organism.fitness < most_fit.fitness:
+                        most_fit = organism
+
+                population.sort()
+                new_population = []
+                for new_index in range(population_count):  # TODO: catch duplicates
                     new_population.append(Organism([most_fit, population[random.randrange(1, champion_count)]]))
-                else:
-                    new_population.append(Organism([population[random.randrange(0, champion_count)], Organism()]))
-            population = new_population
-            '''
-            population.sort()
-            new_population = []
-            for new_index in range(population_count):
-                new_population.append(Organism([most_fit, population[random.randrange(1, champion_count)]]))
-            population = new_population
-        most_fit_cached = most_fit
-        cmds.setKeyframe(get_morpher_name(), t=[time], at='error', v=most_fit.fitness)
-        set_scene_to_organism(most_fit, True)  # may not be necessary because of auto key
+                population = new_population
 
-cmds.deleteUI(progress_window.window)
+            most_fit_cached = most_fit
+            #cmds.setKeyframe(get_morpher_name(), t=[time], at='error', v=most_fit.fitness)
+            set_scene_to_organism(most_fit, True)  # TODO: set all keys at the end
+
+    cmds.deleteUI(progress_window.window)
