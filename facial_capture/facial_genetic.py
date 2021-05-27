@@ -2,7 +2,8 @@ import collections
 import math
 import random
 import maya.cmds as cmds
-from maya.OpenMaya import MVector
+from maya.OpenMaya import MVector, MProfilingScope, MProfiler
+from maya.api import OpenMaya
 
 from core import scene_util
 
@@ -14,16 +15,18 @@ population_count = 20
 champion_count = 5
 
 ProgressTuple = collections.namedtuple('ProgressWindow', ['window', 'control'])
+categoryIndex = MProfiler.addCategory("Facial Genetic")
+morph_targets = None
 
-morph_targets = ['Brow_Raise_Inner_L',
-                 'Brow_Raise_Inner_R',
-                 'Brow_Raise_Outer_L',
-                 'Brow_Raise_Outer_R',
-                 'Brow_Drop_L',
-                 'Brow_Drop_R',
-                 'Brow_Raise_L',
-                 'Brow_Raise_R',
-                 'Nose_Scrunch']
+morph_target_names = ['Brow_Raise_Inner_L',
+                      'Brow_Raise_Inner_R',
+                      'Brow_Raise_Outer_L',
+                      'Brow_Raise_Outer_R',
+                      'Brow_Drop_L',
+                      'Brow_Drop_R',
+                      'Brow_Raise_L',
+                      'Brow_Raise_R',
+                      'Nose_Scrunch']
 
 
 def create_progress_window(size):
@@ -39,16 +42,24 @@ def get_morpher_name():
 
 
 def get_morph_targets():
-    result = []
-    for morph in morph_targets:
-        result.append(get_morpher_name() + '.' + morph)
-    return result
+    profiler = MProfilingScope(categoryIndex, MProfiler.kColorB_L2, "get_morph_targets", "Facial Genetic")
+    global morph_targets
+    if morph_targets is None:
+        result = []
+        for morph in morph_target_names:
+            result.append(get_morpher_name() + '.' + morph)
+        morph_targets = result
+        return result
+    else:
+        return morph_targets
 
 
 class Organism:
     fitness = 9999999.
+    morph_vectors = []
 
     def __init__(self, parents=None, zero=False):
+        profiler = MProfilingScope(categoryIndex, MProfiler.kColorB_L1, "initialize organism", "Facial Genetic")
         self.genes = []
         for morph_index in get_morph_targets():
             value = 0 if zero else random.random()
@@ -70,12 +81,14 @@ class Organism:
 
 
 def get_object_world_position(item):
+    profiler = MProfilingScope(categoryIndex, MProfiler.kColorA_L3, "get_object_world_position", "Facial Genetic")
     translation = cmds.xform(item, query=True, worldSpace=True, translation=True)
     result = MVector(translation[0], translation[1], translation[2])
     return result
 
 
 def get_sum_error(source_vectors, target_vectors, fittest=None, current=None):
+    profiler = MProfilingScope(categoryIndex, MProfiler.kColorA_L2, "get_sum_error", "Facial Genetic")
     sum_error = 0  # TODO: include error from previous frame
     for source, target in zip(source_vectors, target_vectors):
         delta = source - target
@@ -89,6 +102,7 @@ def get_sum_error(source_vectors, target_vectors, fittest=None, current=None):
 
 
 def set_scene_to_organism(o, key=False):
+    profiler = MProfilingScope(categoryIndex, MProfiler.kColorA_L1, "set_scene_to_organism", "Facial Genetic")
     cmds.select(get_morpher_name())
     for gene, attribute in zip(o.genes, get_morph_targets()):
         cmds.setAttr(attribute, gene)
@@ -97,6 +111,7 @@ def set_scene_to_organism(o, key=False):
 
 
 def build_organism_from_scene():
+    profiler = MProfilingScope(categoryIndex, MProfiler.kColorE_L3, "build_organism_from_scene", "Facial Genetic")
     result = Organism()
     for index, attribute in enumerate(get_morph_targets()):
         result.genes[index] = cmds.getAttr(attribute)
@@ -104,6 +119,7 @@ def build_organism_from_scene():
 
 
 def get_morph_deltas(setup, morphs, genes):
+    profiler = MProfilingScope(categoryIndex, MProfiler.kColorE_L2, "get_morph_deltas", "Facial Genetic")
     result = []
     for null in range(len(setup)):
         vec = MVector()
@@ -117,6 +133,7 @@ def get_morph_deltas(setup, morphs, genes):
 
 
 def do_it():
+    most_fit = Organism()
     cmds.select('capture_points', replace=True)
     capture_points = cmds.ls(selection=True)
     capture_points.sort()
@@ -160,7 +177,6 @@ def do_it():
                 new_organism = Organism()
                 organism = Organism([most_fit, new_organism])
                 population.append(organism)
-
             for epoch in range(epoch_count):
                 for organism in population:
                     target_vectors = get_morph_deltas(setup_vectors, morph_deltas, organism.genes)
@@ -176,7 +192,7 @@ def do_it():
                 population = new_population
 
             most_fit_cached = most_fit
+
             #cmds.setKeyframe(get_morpher_name(), t=[time], at='error', v=most_fit.fitness)
             set_scene_to_organism(most_fit, True)  # TODO: set all keys at the end
-
     cmds.deleteUI(progress_window.window)
