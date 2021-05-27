@@ -2,8 +2,10 @@ import collections
 import math
 import random
 import maya.cmds as cmds
-from maya.OpenMaya import MVector, MProfilingScope, MProfiler
+from maya.OpenMaya import MProfilingScope, MProfiler
+from maya.api.OpenMaya import MVector, MTime
 from maya.api import OpenMaya
+from maya.api.MDGContextGuard import MDGContextGuard
 
 from core import scene_util
 
@@ -101,13 +103,13 @@ def get_sum_error(source_vectors, target_vectors, fittest=None, current=None):
     return sum_error
 
 
-def set_scene_to_organism(o, key=False):
+def set_scene_to_organism(o, time=None, key=False):
     profiler = MProfilingScope(categoryIndex, MProfiler.kColorA_L1, "set_scene_to_organism", "Facial Genetic")
     cmds.select(get_morpher_name())
     for gene, attribute in zip(o.genes, get_morph_targets()):
         cmds.setAttr(attribute, gene)
         if key:
-            cmds.setKeyframe(attribute)
+            cmds.setKeyframe(attribute, time=time)
 
 
 def build_organism_from_scene():
@@ -158,16 +160,23 @@ def do_it():
         morph_deltas.append(deltas)
 
     time_range = scene_util.get_timeline_selection()
-    progress_window = create_progress_window(epoch_count * ((int(time_range[1]) - int(time_range[0])) / frame_step_size) * population_count)
+    frame_count = ((int(time_range[1]) - int(time_range[0])) / frame_step_size)
+    progress_window = create_progress_window((epoch_count * frame_count * population_count))
+    start = int(time_range[0])
+    end = int(time_range[1])
     most_fit_cached = Organism()
-    for time in range(int(time_range[0]), int(time_range[1])):
+    capture_vectors_list = []
+    for time in range(start, end):
         if time % frame_step_size == 0:
-            cmds.currentTime(time)
-
             capture_vectors = []  # TODO: MDGContext guard and cache all frames outside of loop
-            for c in capture_points:
-                capture_vectors.append(get_object_world_position(c))
+            with MDGContextGuard(OpenMaya.MDGContext(MTime(time, MTime.uiUnit()))) as guard:
+                for c in capture_points:
+                    capture_vectors.append(get_object_world_position(c))
+            capture_vectors_list.append(capture_vectors)
 
+    for time in range(start, end):
+        if time % frame_step_size == 0:
+            capture_vectors = capture_vectors_list[time-start]
             most_fit = build_organism_from_scene()  # TODO: cache and maintain
             target_vectors = get_morph_deltas(setup_vectors, morph_deltas, most_fit.genes)
             most_fit.set_fitness(get_sum_error(capture_vectors, target_vectors))
@@ -192,7 +201,5 @@ def do_it():
                 population = new_population
 
             most_fit_cached = most_fit
-
-            #cmds.setKeyframe(get_morpher_name(), t=[time], at='error', v=most_fit.fitness)
-            set_scene_to_organism(most_fit, True)  # TODO: set all keys at the end
+            set_scene_to_organism(most_fit, time, True)
     cmds.deleteUI(progress_window.window)
