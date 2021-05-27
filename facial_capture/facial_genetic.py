@@ -1,15 +1,18 @@
 import collections
 import math
 import random
+import threading
+
 import maya.cmds as cmds
 from maya.OpenMaya import MProfilingScope, MProfiler
 from maya.api.OpenMaya import MVector, MTime
 from maya.api import OpenMaya
 from maya.api.MDGContextGuard import MDGContextGuard
+import concurrent.futures
 
 from core import scene_util
 
-frame_step_size = 3
+frame_step_size = 1
 epoch_count = 20
 mutation_rate = 0.005
 mutation_chance = 0.75
@@ -135,7 +138,6 @@ def get_morph_deltas(setup, morphs, genes):
 
 
 def do_it():
-    most_fit = Organism()
     cmds.select('capture_points', replace=True)
     capture_points = cmds.ls(selection=True)
     capture_points.sort()
@@ -164,20 +166,21 @@ def do_it():
     progress_window = create_progress_window((epoch_count * frame_count * population_count))
     start = int(time_range[0])
     end = int(time_range[1])
+    most_fit = Organism()
     most_fit_cached = Organism()
     capture_vectors_list = []
     for time in range(start, end):
         if time % frame_step_size == 0:
-            capture_vectors = []  # TODO: MDGContext guard and cache all frames outside of loop
+            capture_vectors = []
             with MDGContextGuard(OpenMaya.MDGContext(MTime(time, MTime.uiUnit()))) as guard:
                 for c in capture_points:
                     capture_vectors.append(get_object_world_position(c))
             capture_vectors_list.append(capture_vectors)
 
     for time in range(start, end):
+        sequential_index = int((time-start)/frame_step_size)
         if time % frame_step_size == 0:
-            capture_vectors = capture_vectors_list[int((time-start)/frame_step_size)]
-            most_fit = build_organism_from_scene()  # TODO: cache and maintain
+            capture_vectors = capture_vectors_list[sequential_index]
             target_vectors = get_morph_deltas(setup_vectors, morph_deltas, most_fit.genes)
             most_fit.set_fitness(get_sum_error(capture_vectors, target_vectors))
 
@@ -186,15 +189,15 @@ def do_it():
                 new_organism = Organism()
                 organism = Organism([most_fit, new_organism])
                 population.append(organism)
+
             for epoch in range(epoch_count):
                 for organism in population:
                     target_vectors = get_morph_deltas(setup_vectors, morph_deltas, organism.genes)
                     organism.set_fitness(get_sum_error(capture_vectors, target_vectors, most_fit_cached, organism))
                     cmds.progressBar(progress_window.control, edit=True, step=1)
-                    if organism.fitness < most_fit.fitness:
-                        most_fit = organism
 
                 population.sort()
+                most_fit = population[0] if population[0].fitness < most_fit.fitness else most_fit
                 new_population = []
                 for new_index in range(population_count):  # TODO: catch duplicates
                     new_population.append(Organism([most_fit, population[random.randrange(1, champion_count)]]))
@@ -203,3 +206,9 @@ def do_it():
             most_fit_cached = most_fit
             set_scene_to_organism(most_fit, time, True)
     cmds.deleteUI(progress_window.window)
+
+
+def update_organism(capture_vectors, morph_deltas, most_fit_cached, organism, setup_vectors):
+    target_vectors = get_morph_deltas(setup_vectors, morph_deltas, organism.genes)
+    organism.set_fitness(get_sum_error(capture_vectors, target_vectors, most_fit_cached, organism))
+    return organism
