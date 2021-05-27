@@ -9,7 +9,7 @@ from maya.api.MDGContextGuard import MDGContextGuard
 
 from core import scene_util
 
-frame_step_size = 1
+frame_step_size = 3
 epoch_count = 20
 mutation_rate = 0.005
 mutation_chance = 0.75
@@ -176,7 +176,7 @@ def do_it():
 
     for time in range(start, end):
         if time % frame_step_size == 0:
-            capture_vectors = capture_vectors_list[time-start]
+            capture_vectors = capture_vectors_list[int((time-start)/frame_step_size)]
             most_fit = build_organism_from_scene()  # TODO: cache and maintain
             target_vectors = get_morph_deltas(setup_vectors, morph_deltas, most_fit.genes)
             most_fit.set_fitness(get_sum_error(capture_vectors, target_vectors))
