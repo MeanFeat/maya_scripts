@@ -25,12 +25,12 @@ input_lines = input_file.readlines()
 
 progress_window = create_progress_window(len(input_lines))
 
-'''locators = []
+locators = []
 for i in range(point_count):
-    locators.append(cmds.spaceLocator())'''
+    locators.append(cmds.spaceLocator())
 
 #cmds.select("capture_points")
-locators = cmds.ls(selection=True)
+#locators = cmds.ls(selection=True)
 
 
 def get_static_vectors(vector_list):

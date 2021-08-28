@@ -18,6 +18,8 @@ class PaintFace(PaintSystem):
 
     draw_points = []
 
+    drag_strength = 0.5
+
     def __init__(self, context='paint_trajectory_ctx'):
         super(PaintFace, self).__init__()
         self.context = context
@@ -43,6 +45,18 @@ class PaintFace(PaintSystem):
         for p in self.paintable_points:
             if p.feathering > 0 and not p.is_locked:
                 p.set_world_point((p.world_point + (drag_point - self.brush.last_drag_point.world_point) * p.feathering))
+                #scene_object = self.paintable_scene_objects[i]
+                #origin = MVector(get_matrix_translation(scene_object.dag_path.exclusiveMatrix()))
+                #local = t - origin
+                #x_limit = cmds.transformLimits(scene_object.scene_name, query=True, translationX=True)
+                #y_limit = cmds.transformLimits(scene_object.scene_name, query=True, translationY=True)
+                #z_limit = cmds.transformLimits(scene_object.scene_name, query=True, translationZ=True)
+                #min_vec = MVector(x_limit[0], y_limit[0], z_limit[0])
+                #max_vec = MVector(x_limit[1], y_limit[1], z_limit[1])
+                #local.x = min(max(min_vec.x, local.x), max_vec.x)
+                #local.y = min(max(min_vec.y, local.y), max_vec.y)
+                #local.z = min(max(min_vec.z, local.z), max_vec.z)
+                #p.set_world_point(MPoint(origin + local))
 
     def build_draw_shapes(self):
         super(PaintFace, self).build_draw_shapes()
@@ -62,6 +76,7 @@ class PaintFace(PaintSystem):
 
     def update_driven_objects(self):
         for i, p in enumerate(self.paintable_scene_objects):
+
             p.transform_func.setTranslation(MVector(self.paintable_points[i].world_point), MSpace.kWorld)
 
     def update_view_points(self):

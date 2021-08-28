@@ -1,12 +1,12 @@
 from maya import cmds, mel
 from maya.api import OpenMaya
 
-file_name = 'D:/Temp/RADIANT_TEMP/input/example1.arcvis'
+file_name = 'D:/Temp/RADIANT_TEMP/input/visemes.arcvis'
 
 attribute_list = ['Open',
                   'Explosive',
                   'Dental_Lip',
-                  'TightFBXASC045O',
+                  'Tight_O',
                   'Tight',
                   'Wide',
                   'Affricate',
@@ -51,5 +51,5 @@ with open(file_name, "r") as arcvis_file:
     arcvis_file.readline()
     arcvis_file.readline()
 
-    key_rotation('cc_base_jawroot')
-    key_rotation('cc_base_tongue01')
+    key_rotation('CC_Base_JawRoot')
+    key_rotation('CC_Base_Tongue01')

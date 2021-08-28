@@ -12,12 +12,12 @@ import concurrent.futures
 
 from core import scene_util
 
-frame_step_size = 1
+frame_step_size = 5
 epoch_count = 20
 mutation_rate = 0.005
 mutation_chance = 0.75
-population_count = 20
-champion_count = 5
+population_count = 200
+champion_count = 50
 
 ProgressTuple = collections.namedtuple('ProgressWindow', ['window', 'control'])
 categoryIndex = MProfiler.addCategory("Facial Genetic")
@@ -31,7 +31,19 @@ morph_target_names = ['Brow_Raise_Inner_L',
                       'Brow_Drop_R',
                       'Brow_Raise_L',
                       'Brow_Raise_R',
-                      'Nose_Scrunch']
+                      'Eye_Squint_L',
+                      'Eye_Squint_R',
+                      'Nose_Scrunch',
+                      'Nose_Flank_Raise_L',
+                      'Nose_Flank_Raise_R',
+                      'Cheek_Raise_L',
+                      'Cheek_Raise_R',
+                      'Mouth_Smile_L',
+                      'Mouth_Smile_R',
+                      'Mouth_Frown_L',
+                      'Mouth_Frown_R',
+                      'Mouth_Dimple_L',
+                      'Mouth_Dimple_R']
 
 
 def create_progress_window(size):
@@ -178,7 +190,7 @@ def do_it():
             capture_vectors_list.append(capture_vectors)
 
     for time in range(start, end):
-        sequential_index = int((time-start)/frame_step_size)
+        sequential_index = int((time - start) / frame_step_size)
         if time % frame_step_size == 0:
             capture_vectors = capture_vectors_list[sequential_index]
             target_vectors = get_morph_deltas(setup_vectors, morph_deltas, most_fit.genes)
