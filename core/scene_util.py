@@ -4,6 +4,10 @@ from maya.api.OpenMaya import MVector, MPoint
 from maya.api.OpenMayaUI import M3dView
 
 
+def get_timeline_range():
+    return cmds.playbackOptions(q=True, min=True), cmds.playbackOptions(q=True, max=True)
+
+
 def get_playback_slider():
     return mel.eval('$tmpVar=$gPlayBackSlider')
 
