@@ -59,3 +59,7 @@ def view_to_world(p):  # type (MPoint) -> MPoint
     wv = MVector()
     M3dView.active3dView().viewToWorld(int(p.x), int(p.y), wp, wv)
     return wp
+
+
+def select_layer_objects(layer_name):
+    cmds.select(cmds.editDisplayLayerMembers(layer_name, query=True))
